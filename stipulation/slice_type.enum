@@ -190,6 +190,7 @@
     ENUMERATOR(STDoneRemovingIllegalMoves),                             \
     ENUMERATOR(STDoneRemovingFutileMoves),                              \
     ENUMERATOR(STDonePriorisingMoves),                                  \
+    ENUMERATOR(STNextPly),                                              \
     ENUMERATOR(STMoveGenerator), /* unoptimised move generator */       \
     ENUMERATOR(STKingMoveGenerator), /* move generator for king moves */ \
     ENUMERATOR(STNonKingMoveGenerator), /* move generator for other moves */ \

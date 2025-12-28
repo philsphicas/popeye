@@ -68,6 +68,7 @@ static slice_index const slice_rank_order[] =
   STDeadEnd,
   STGeneratingMoves,
   STExecutingKingCapture,
+  STNextPly,
   STExclusiveChessExclusivityDetector,
   STExclusiveChessNestedExclusivityDetector,
   STMakeTakeResetMoveIdsCastlingAsMakeInMoveGeneration,

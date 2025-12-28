@@ -886,6 +886,8 @@ void build_solvers2(slice_index si)
   optimise_is_square_observed(si);
   optimise_is_in_check(si);
 
+  solving_insert_next_ply(si);
+
   solving_impose_starter(si,SLICE_STARTER(si));
 
   pipe_solve_delegate(si);
