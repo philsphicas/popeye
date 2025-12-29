@@ -75,6 +75,7 @@ static slice_index const slice_rank_order[] =
   STNextPly,
   STPointReflectionTemporaryWalkChanger,
   STMoveGenerator,
+  STAliceMoveGenerator,
   STHalfInChessMoveGenerator,
   STAllInChessMoveGenerator,
   STTotalInvisibleMovesByInvisibleGenerator,

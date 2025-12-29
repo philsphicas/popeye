@@ -234,6 +234,7 @@ static slice_type const move_generator_slice_types[] =
 {
     STNextPly,
     STMoveGenerator,
+    STAliceMoveGenerator,
     STBicapturesRecolorPieces,
     STKingMoveGenerator,
     STBicapturesUnrecolorPieces,

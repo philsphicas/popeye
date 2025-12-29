@@ -572,6 +572,9 @@ static structure_traversers_visitor const solvers[] =
   { STMoveGenerator,               &remember_generator },
   { STOrthodoxMatingMoveGenerator, &remember_generator },
   { STSinglePieceMoveGenerator,    &remember_generator },
+  { STAliceMoveGenerator,          &remember_generator },
+  { STKingMoveGenerator,           &remember_generator },
+  { STNonKingMoveGenerator,        &remember_generator },
   { STDoneGeneratingMoves,         &stip_structure_visitor_noop }
 };
 
