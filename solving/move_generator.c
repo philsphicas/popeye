@@ -567,22 +567,6 @@ static void remember_generator(slice_index si,
   TraceFunctionResultEnd();
 }
 
-static structure_traversers_visitor const solvers[] =
-{
-  { STMoveGenerator,               &remember_generator },
-  { STOrthodoxMatingMoveGenerator, &remember_generator },
-  { STSinglePieceMoveGenerator,    &remember_generator },
-  { STAliceMoveGenerator,          &remember_generator },
-  { STKingMoveGenerator,           &remember_generator },
-  { STNonKingMoveGenerator,        &remember_generator },
-  { STDoneGeneratingMoves,         &stip_structure_visitor_noop }
-};
-
-enum
-{
-  nr_solvers = sizeof solvers / sizeof solvers[0]
-};
-
 static void insert_next_ply(slice_index si,
                             stip_structure_traversal *st,
                             void *param)
@@ -595,7 +579,12 @@ static void insert_next_ply(slice_index si,
   TraceFunctionParamListEnd();
 
   stip_structure_traversal_init(&st_nested,&generator_found);
-  stip_structure_traversal_override(&st_nested,solvers,nr_solvers);
+  stip_structure_traversal_override_by_function(&st_nested,
+                                                slice_function_move_generator,
+                                                &remember_generator);
+  stip_structure_traversal_override_single(&st_nested,
+                                           STDoneGeneratingMoves,
+                                           &stip_structure_visitor_noop);
   stip_traverse_structure(si,&st_nested);
 
   if (generator_found)
