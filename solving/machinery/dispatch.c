@@ -703,6 +703,10 @@ void dispatch(slice_index si)
       find_shortest_solve(si);
       break;
 
+    case STNextPly:
+      next_ply_solve(si);
+      break;
+
     case STMoveGenerator:
       move_generator_solve(si);
       break;
