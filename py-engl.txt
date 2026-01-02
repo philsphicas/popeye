@@ -296,7 +296,7 @@ commands expect further parameters. Lets start with the simpler commands:
 	AntiGuards
 	Leffie
 	AliceChess
-	Immobilio
+	Immobilio (possibly followed by a list of piece walks)
 
 	After the conditions Imitator, MagicSquare, Hole,
 	WhitePromSquares, BlackPromSquares or one of
