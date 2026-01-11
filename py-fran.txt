@@ -298,7 +298,7 @@ simples:
 	Francfort
 	Leffie
 	AliceEchecs
-	Immobilio
+	Immobilio (peut etre suivie par la liste d'allures)
 
 	Apres les mots-cle Imitator, CaseMagique, Trou,
 	BlancCasePromotion, NoirCasePromotion ou 

@@ -29,6 +29,7 @@
 #include "conditions/geneva.h"
 #include "conditions/grid.h"
 #include "conditions/imitator.h"
+#include "conditions/immobilio.h"
 #include "conditions/immune.h"
 #include "conditions/isardam.h"
 #include "conditions/kobul.h"
@@ -1685,6 +1686,14 @@ char *ParseCond(char *tok)
         case geneva:
           tok = ParseCirceVariants(tok,&geneva_variant);
           break;
+
+        case immobilio:
+        {
+          unsigned int nr_walks_read;
+          tok = ReadWalks(tok,&immobilio_is_walk_affected,&nr_walks_read);
+          immobilio_is_restricted_to_walks = nr_walks_read>0;
+          break;
+        }
 
         /* different types of Anticirce */
           /* just Anticirce - but maybe with many variants */

@@ -303,7 +303,7 @@ Kommandos:
 	FrankfurtSchach
 	Leffie
 	AliceSchach
-	Immobilio
+	Immobilio (wenn gewuenscht gefolgt von der Liste der Gangarten)
 
 	Nach den Schluesselwoertern Imitator, MagischeFelder, Loch,
 	UWFeldWeiss, UWFeldSchwarz oder irgendeines
