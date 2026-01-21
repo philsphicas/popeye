@@ -70,6 +70,14 @@ unsigned int PieceId2index[MaxPieceId+1];
 
 unsigned int nr_reasons_for_staying_empty[maxsquare+4];
 
+/* MinBlockers constraint */
+unsigned int min_blockers_count = 0;
+
+void set_min_blockers_constraint(unsigned int count)
+{
+  min_blockers_count = count;
+}
+
 typedef struct
 {
   Flags       spec[nr_squares_on_board];

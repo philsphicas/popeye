@@ -140,6 +140,16 @@ void intelligent_find_and_block_flights(slice_index si)
   assert(nr_king_flights_to_be_blocked==0);
 
   plan_blocks_of_flights();
+
+  /* Early pruning for MinBlockers constraint - skip positions that need
+   * fewer blockers than the user-specified minimum */
+  if (min_blockers_count > 0 && nr_king_flights_to_be_blocked < min_blockers_count)
+  {
+    TraceFunctionExit(__func__);
+    TraceFunctionResultEnd();
+    return;
+  }
+
   if (nr_king_flights_to_be_blocked==0)
     finalise_blocking(si);
   else
