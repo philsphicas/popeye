@@ -297,7 +297,7 @@ static void handle_progress(worker_info_t *w, unsigned int m, unsigned int k, un
             elapsed = (double)(now.tv_sec - start_time.tv_sec) +
                       (double)(now.tv_usec - start_time.tv_usec) / 1000000.0;
 
-            printf("\n%lu potential positions in %u+%u  (Time = %.3f s)\n",
+            printf("%lu potential positions in %u+%u  (Time = %.3f s)\n",
                    total_positions, dm, dk, elapsed);
             fflush(stdout);
 
