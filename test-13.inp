@@ -1,0 +1,6 @@
+BeginProblem
+  Pieces White Kf3 Bh5 Bh4 Se1 Sb3 Pg2 Pd4 Pc6 Pc3 Pb4 Pa3
+  Pieces Black Kd1 Pg7 Pf5 Pf4 Pc7 Pb5 Pa4
+  Stipulation ser-h#13
+  Option intel maxsol 3 mo
+EndProblem

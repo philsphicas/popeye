@@ -1,0 +1,6 @@
+BeginProblem
+  Pieces White Ke7 Ph3 Pg2 Pd6 Pd2 Pb2 Pa4
+  Pieces Black Kf5 Pe5 Pd7 Pd3 Pc2 Pa5
+  Stipulation ser-h#21
+  Option Intelligent MoveNumber
+EndProblem

@@ -41,6 +41,7 @@
 #include "debugging/trace.h"
 #include "pieces/pieces.h"
 #include "platform/maxtime.h"
+#include "platform/worker.h"
 #include "options/options.h"
 
 #include "debugging/assert.h"
@@ -137,18 +138,32 @@ void mating_square_allow_square(square sq)
 /* Partition support for parallel solving */
 unsigned int partition_index = 0;
 unsigned int partition_total = 0;
+unsigned int partition_stride = 0;
+unsigned int partition_max = 0;
 unsigned int current_king_index = 0;
 
 void set_partition(unsigned int index, unsigned int total)
 {
   partition_index = index;
   partition_total = total;
+  partition_stride = 0;  /* Simple partition mode */
+  partition_max = 0;
+}
+
+void set_partition_range(unsigned int start, unsigned int stride, unsigned int max)
+{
+  partition_index = start;
+  partition_total = 0;   /* Disable simple partition mode */
+  partition_stride = stride;
+  partition_max = max;
 }
 
 void reset_partition(void)
 {
   partition_index = 0;
   partition_total = 0;
+  partition_stride = 0;
+  partition_max = 0;
 }
 
 /* Check if a (king, checker, check_sq) combination is in current partition
@@ -158,20 +173,49 @@ void reset_partition(void)
  *
  * This ensures all 64 king squares are touched within the first 64 partitions,
  * giving good progress visibility even with few workers.
+ *
+ * Two modes:
+ *   Simple: partition_total > 0 - combo belongs to partition_index out of partition_total
+ *   Strided: partition_stride > 0 - combo belongs if (combo % max) in {start, start+stride, ...}
  */
+static unsigned int partition_call_count = 0;
+static unsigned int partition_match_count = 0;
+
 boolean is_in_partition(unsigned int king_idx,
                         unsigned int checker_idx,
                         unsigned int check_sq_idx)
 {
   unsigned int combo_index;
-
-  if (partition_total == 0)
-    return true;
+  boolean result;
 
   /* King varies fastest for good progress distribution */
   combo_index = check_sq_idx * (64 * 15) + checker_idx * 64 + king_idx;
 
-  return (combo_index % partition_total) == partition_index;
+  partition_call_count++;
+
+  /* Simple partition mode: N of M */
+  if (partition_total > 0)
+  {
+    result = (combo_index % partition_total) == partition_index;
+    if (result) partition_match_count++;
+    return result;
+  }
+
+  /* Strided partition mode: START, START+STRIDE, START+2*STRIDE, ... */
+  if (partition_stride > 0 && partition_max > 0)
+  {
+    unsigned int partition_num = combo_index % partition_max;
+    /* Check if partition_num is in the sequence: start, start+stride, start+2*stride, ... */
+    if (partition_num >= partition_index)
+    {
+      unsigned int offset = partition_num - partition_index;
+      return (offset % partition_stride) == 0;
+    }
+    return false;
+  }
+
+  /* No partitioning enabled - all combos are in partition */
+  return true;
 }
 
 typedef struct
@@ -485,6 +529,7 @@ static void GenerateBlackKing(slice_index si)
   Flags const king_flags = black[index_of_king].flags;
   square const *bnp;
   unsigned int king_idx;
+  unsigned int king_count = 0;  /* DEBUG */
 
   TraceFunctionEntry(__func__);
   TraceFunctionParamListEnd();
@@ -496,6 +541,7 @@ static void GenerateBlackKing(slice_index si)
 
   for (bnp = boardnum, king_idx = 0; *bnp!=initsquare; ++bnp, ++king_idx)
   {
+    king_count++;  /* DEBUG */
     /* Check MatingSquare constraint - skip squares not in allowed set */
     if (mating_square_constrained && !mating_square_allowed[king_idx])
       continue;

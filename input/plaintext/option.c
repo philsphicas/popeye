@@ -401,7 +401,7 @@ char *ParseOpt(slice_index start)
         {
           char *end;
           unsigned long const value = strtoul(tok,&end,10);
-          if (end!=tok && *end==0 && value<UINT_MAX)
+          if (end!=tok && *end==0 && value<=UINT_MAX)
             set_min_blockers_constraint((unsigned int)value);
           else
           {

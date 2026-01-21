@@ -26,6 +26,7 @@
 #include "solving/pipe.h"
 #include "stipulation/pipe.h"
 #include "stipulation/branch.h"
+#include "platform/worker.h"
 #include "debugging/assert.h"
 
 #include <ctype.h>
@@ -485,8 +486,12 @@ void output_plaintext_write_board(slice_index si)
   TraceFunctionParam("%u",si);
   TraceFunctionParamListEnd();
 
-  WriteBoard(slices[si].u.position_handler.position);
-  indentation = 0;
+  /* Skip board diagram in worker mode (subprocess output) */
+  if (!is_worker_mode())
+  {
+    WriteBoard(slices[si].u.position_handler.position);
+    indentation = 0;
+  }
 
   pipe_solve_delegate(si);
 
@@ -515,7 +520,8 @@ void output_plaintext_write_piece_counts(slice_index si)
   TraceFunctionParam("%u",si);
   TraceFunctionParamListEnd();
 
-  WritePieceCounts(slices[si].u.position_handler.position,indentation);
+  if (!is_worker_mode())
+    WritePieceCounts(slices[si].u.position_handler.position,indentation);
 
   pipe_solve_delegate(si);
 

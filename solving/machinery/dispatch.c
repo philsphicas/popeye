@@ -365,6 +365,7 @@
 #include "platform/maxmem.h"
 #include "platform/timer.h"
 #include "platform/heartbeat.h"
+#include "platform/parallel_fork.h"
 
 /* Try to solve in solve_nr_remaining half-moves.
  * @param si slice index
@@ -918,6 +919,10 @@ void dispatch(slice_index si)
 
     case STForkOnRemaining:
       fork_on_remaining_solve(si);
+      break;
+
+    case STParallelWorkerForker:
+      parallel_worker_forker_solve(si);
       break;
 
     case STHashOpener:

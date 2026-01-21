@@ -1,4 +1,5 @@
 #include "input/plaintext/problem.h"
+#include "platform/parallel_fork.h"
 #include "input/plaintext/token.h"
 #include "output/plaintext/protocol.h"
 #include "output/plaintext/message.h"
@@ -81,6 +82,7 @@ void input_plaintext_problem_handle(slice_index si)
     {
         alloc_pipe(STInputPlainTextTwinsHandler),
         alloc_pipe(STTwinIdAdjuster),
+        alloc_parallel_worker_forker(),
         alloc_phase_solving_incomplete(si),
         alloc_pipe(STEndOfStipulationSpecific),
         alloc_pipe(STSolvingMachineryIntroBuilder),

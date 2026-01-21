@@ -6,6 +6,8 @@
 #include "platform/maxtime.h"
 #include "platform/heartbeat.h"
 #include "platform/maxmem.h"
+#include "platform/worker.h"
+#include "options/options.h"
 #include "input/plaintext/memory.h"
 #include "stipulation/pipe.h"
 #include "solving/pipe.h"
@@ -103,6 +105,29 @@ static int parseCommandlineOptions(int argc, char *argv[])
       idx++;
       continue;
     }
+    else if (strcmp(argv[idx], "-worker")==0)
+    {
+      /* Worker mode: structured output for subprocess coordination */
+      set_worker_mode(true);
+      output_plaintext_suppress_greeting();
+      OptFlag[noboard] = true;  /* Suppress board diagram */
+      idx++;
+      continue;
+    }
+    else if (idx+1<argc && strcmp(argv[idx], "-parallel")==0)
+    {
+      /* Parallel mode: spawn N workers with king-partitioned search */
+      char *end;
+      unsigned long n;
+      idx++;
+      n = strtoul(argv[idx], &end, 10);
+      if (*end == '\0' && n > 0 && n <= 64)
+      {
+        set_parallel_worker_count((unsigned int)n);
+      }
+      idx++;
+      continue;
+    }
     else if (strcmp(argv[idx], "-maxtrace")==0)
     {
 #if defined(DOTRACE)
@@ -136,7 +161,10 @@ static int parseCommandlineOptions(int argc, char *argv[])
     }
     else if (idx+1<argc && strcmp(argv[idx], "-partition")==0)
     {
-      /* Parse N/M format for partition (0-indexed) */
+      /* Parse N/M format for partition (1-indexed, user-friendly)
+       * Example: -partition 1/4 means partition 1 of 4
+       * Internally converted to 0-indexed for set_partition()
+       */
       char *slash;
       idx++;
       slash = strchr(argv[idx], '/');
@@ -148,9 +176,44 @@ static int parseCommandlineOptions(int argc, char *argv[])
         if (end == slash)
         {
           m = strtoul(slash + 1, &end, 10);
-          if (*end == '\0' && n < m && m > 0)
+          if (*end == '\0' && n >= 1 && n <= m && m > 0)
           {
-            set_partition((unsigned int)n, (unsigned int)m);
+            /* Convert from 1-indexed to 0-indexed */
+            set_partition((unsigned int)(n - 1), (unsigned int)m);
+          }
+        }
+      }
+      idx++;
+      continue;
+    }
+    else if (idx+1<argc && strcmp(argv[idx], "-partition-range")==0)
+    {
+      /* Parse START/STRIDE/TOTAL format for strided partition (0-indexed)
+       * Example: -partition-range 0/64/61440 handles partitions 0,64,128,...
+       * This allows distributing 61,440 partitions across 64 workers via striding
+       */
+      char *slash1, *slash2;
+      idx++;
+      slash1 = strchr(argv[idx], '/');
+      if (slash1 != NULL)
+      {
+        slash2 = strchr(slash1 + 1, '/');
+        if (slash2 != NULL)
+        {
+          char *end;
+          unsigned long start, stride, total;
+          start = strtoul(argv[idx], &end, 10);
+          if (end == slash1)
+          {
+            stride = strtoul(slash1 + 1, &end, 10);
+            if (end == slash2)
+            {
+              total = strtoul(slash2 + 1, &end, 10);
+              if (*end == '\0' && stride > 0 && total > 0 && start < total)
+              {
+                set_partition_range((unsigned int)start, (unsigned int)stride, (unsigned int)total);
+              }
+            }
           }
         }
       }

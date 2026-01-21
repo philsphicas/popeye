@@ -2,12 +2,30 @@
 #include "output/plaintext/stdio.h"
 #include "output/plaintext/stipulation.h"
 #include "output/plaintext/sstipulation.h"
+#include "platform/worker.h"
 
 #include <stdarg.h>
 #include <stdio.h>
+#include <string.h>
 
 static FILE *TraceFile;
 static char const *open_mode = "a";
+
+/* Worker mode line buffering for solution output */
+#define WORKER_LINE_BUFFER_SIZE 8192
+static char worker_line_buffer[WORKER_LINE_BUFFER_SIZE];
+static size_t worker_line_pos = 0;
+
+/* Flush buffered line to worker protocol */
+static void flush_worker_line_buffer(void)
+{
+  if (worker_line_pos > 0)
+  {
+    worker_line_buffer[worker_line_pos] = '\0';
+    worker_emit_solution_text(worker_line_buffer);
+    worker_line_pos = 0;
+  }
+}
 
 /* Remember for this run's proptocol (if any) to overwrite (rather than append
  * to) a previous run's protocol (if any)
@@ -62,10 +80,36 @@ int protocol_close(void)
  */
 int protocol_fputc(int c, FILE *regular)
 {
-  int const result = fputc(c,regular);
+  int result;
+  
+  /* Worker mode: buffer stdout output and emit via @@TEXT protocol */
+  if (is_worker_mode() && regular == stdout)
+  {
+    if (c == '\n')
+    {
+      flush_worker_line_buffer();
+      result = c;
+    }
+    else if (worker_line_pos < WORKER_LINE_BUFFER_SIZE - 1)
+    {
+      worker_line_buffer[worker_line_pos++] = (char)c;
+      result = c;
+    }
+    else
+    {
+      /* Buffer full - flush and add char */
+      flush_worker_line_buffer();
+      worker_line_buffer[worker_line_pos++] = (char)c;
+      result = c;
+    }
+  }
+  else
+  {
+    result = fputc(c, regular);
+  }
 
-  if (TraceFile!=0)
-    fputc(c,TraceFile);
+  if (TraceFile != 0)
+    fputc(c, TraceFile);
 
   return result;
 }
@@ -78,7 +122,36 @@ int protocol_vfprintf(FILE *regular, char const *format, va_list args)
 {
   int result;
 
-  if (TraceFile==0)
+  /* Worker mode: buffer stdout output and emit via @@TEXT protocol */
+  if (is_worker_mode() && regular == stdout)
+  {
+    char temp_buffer[WORKER_LINE_BUFFER_SIZE];
+    va_list args_copy;
+    
+    va_copy(args_copy, args);
+    result = vsnprintf(temp_buffer, sizeof(temp_buffer), format, args_copy);
+    va_end(args_copy);
+    
+    /* Process the formatted string character by character */
+    for (char const *p = temp_buffer; *p; p++)
+    {
+      if (*p == '\n')
+      {
+        flush_worker_line_buffer();
+      }
+      else if (worker_line_pos < WORKER_LINE_BUFFER_SIZE - 1)
+      {
+        worker_line_buffer[worker_line_pos++] = *p;
+      }
+      else
+      {
+        /* Buffer full - flush and add char */
+        flush_worker_line_buffer();
+        worker_line_buffer[worker_line_pos++] = *p;
+      }
+    }
+  }
+  else if (TraceFile==0)
     result = vfprintf(regular,format,args);
   else
   {
@@ -207,6 +280,12 @@ unsigned int protocol_write_sstipulation(FILE *regular, slice_index si)
  */
 int protocol_fflush(FILE *regular)
 {
+  /* Worker mode: flush any buffered content */
+  if (is_worker_mode() && regular == stdout)
+  {
+    flush_worker_line_buffer();
+  }
+
   if (TraceFile!=0)
     fflush(TraceFile);
 

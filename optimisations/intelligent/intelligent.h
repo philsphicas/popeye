@@ -117,15 +117,29 @@ void mating_square_allow_square(square sq);
  *
  * Mapping: combo_index = check_sq_idx * (64 * 15) + checker_idx * 64 + king_idx
  * A combination belongs to partition: combo_index % partition_total
+ *
+ * Simple partition: -partition N/M
+ *   Handles partition index N-1 of M partitions (1-indexed on command line)
+ *
+ * Strided partition: -partition-range START/STRIDE/TOTAL
+ *   Handles partitions START, START+STRIDE, START+2*STRIDE, ... up to TOTAL
+ *   Example: -partition-range 0/64/61440 handles partitions 0,64,128,...
  */
 extern unsigned int partition_index;
 extern unsigned int partition_total;
+
+/* Strided partition support */
+extern unsigned int partition_stride;
+extern unsigned int partition_max;   /* Total number of partitions (e.g., 61440) */
 
 /* Current king index for partition checking in nested loops */
 extern unsigned int current_king_index;
 
 /* Set partition N of M (0-indexed) */
 void set_partition(unsigned int index, unsigned int total);
+
+/* Set strided partition range (0-indexed start, stride, max) */
+void set_partition_range(unsigned int start, unsigned int stride, unsigned int max);
 
 /* Reset partition (disabled) */
 void reset_partition(void);

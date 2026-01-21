@@ -6,7 +6,9 @@
 #include "debugging/trace.h"
 #include "options/movenumbers.h"
 #include "optimisations/intelligent/moves_left.h"
+#include "optimisations/intelligent/intelligent.h"
 #include "platform/maxtime.h"
+#include "platform/worker.h"
 #include "options/options.h"
 #include "output/output.h"
 #include "output/plaintext/protocol.h"
@@ -67,11 +69,22 @@ static boolean is_length_ruled_out_by_option_restart(void)
 
 static void print_nr_potential_target_positions(void)
 {
-  protocol_fputc('\n',stdout);
-  output_plaintext_message(PotentialMates,
-          nr_potential_target_positions,MovesLeft[White],MovesLeft[Black]);
-  output_plaintext_print_time("  (",")");
-  protocol_fflush(stdout);
+  /* Emit structured progress for parallel parent to aggregate */
+  if (is_worker_mode())
+  {
+    worker_emit_progress(MovesLeft[White], MovesLeft[Black], nr_potential_target_positions);
+  }
+  else
+  {
+    protocol_fputc('\n',stdout);
+    output_plaintext_message(PotentialMates,
+            nr_potential_target_positions,MovesLeft[White],MovesLeft[Black]);
+    output_plaintext_print_time("  (",")");
+    /* Show partition info if running with -partition */
+    if (partition_total > 0)
+      protocol_fprintf(stdout," [partition %u/%u]", partition_index + 1, partition_total);
+    protocol_fflush(stdout);
+  }
 }
 
 /* Try to solve in solve_nr_remaining half-moves.
