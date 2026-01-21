@@ -308,19 +308,28 @@ static void handle_progress(worker_info_t *w, unsigned int m, unsigned int k, un
 
 static void process_worker_line(worker_info_t *w, char const *line)
 {
-    /* Parse structured protocol */
-    if (strncmp(line, "@@", 2) == 0)
+    /* Check if line contains @@ protocol marker anywhere */
+    char *protocol_start = strstr(line, "@@");
+    if (protocol_start != NULL)
     {
-        if (strncmp(line, "@@PROGRESS:", 11) == 0)
+        /* Handle the protocol part */
+        if (strncmp(protocol_start, "@@PROGRESS:", 11) == 0)
         {
             unsigned int m, k;
             unsigned long positions;
-            if (sscanf(line + 11, "%u+%u:%lu", &m, &k, &positions) == 3)
+            if (sscanf(protocol_start + 11, "%u+%u:%lu", &m, &k, &positions) == 3)
                 handle_progress(w, m, k, positions);
         }
-        else if (strncmp(line, "@@TEXT:", 7) == 0)
+        else if (strncmp(protocol_start, "@@TEXT:", 7) == 0)
         {
-            char const *text = line + 7;
+            char const *text = protocol_start + 7;
+            
+            /* Skip whitespace-only TEXT messages */
+            char const *p = text;
+            while (*p == ' ' || *p == '\t') p++;
+            if (*p == '\0')
+                return;  /* Don't print whitespace-only text */
+            
             printf("%s\n", text);
             fflush(stdout);
 
@@ -335,21 +344,34 @@ static void process_worker_line(worker_info_t *w, char const *line)
                 }
             }
         }
-        else if (strncmp(line, "@@FINISHED", 10) == 0)
+        else if (strncmp(protocol_start, "@@FINISHED", 10) == 0)
         {
             /* Worker finished - already tracked by pipe close */
         }
+        else if (strncmp(protocol_start, "@@DEBUG:", 8) == 0)
+        {
+            /* Debug messages - suppress in production */
+        }
         /* Other @@ messages can be aggregated/handled as needed */
+        return;  /* Don't print the raw line */
     }
-    else if (line[0] != '\0')
-    {
-        /* Filter out worker "solution finished" noise */
-        if (strncmp(line, "solution finished", 17) == 0)
-            return;
-        /* Non-protocol output - solutions, etc. */
-        printf("%s\n", line);
-        fflush(stdout);
-    }
+
+    /* Filter out stipulation echo */
+    if (strncmp(line, "ser-", 4) == 0 || strncmp(line, "  ser-", 6) == 0)
+        return;
+
+    /* Skip blank or whitespace-only lines */
+    char const *p = line;
+    while (*p == ' ' || *p == '\t') p++;
+    if (*p == '\0') return;
+
+    /* Filter out worker "solution finished" noise */
+    if (strncmp(line, "solution finished", 17) == 0)
+        return;
+
+    /* Non-protocol output - solutions, etc. */
+    printf("%s\n", line);
+    fflush(stdout);
 }
 
 static void process_worker_output(worker_info_t *w)
