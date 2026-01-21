@@ -9,6 +9,7 @@
 #include "stipulation/slice_insertion.h"
 #include "solving/incomplete.h"
 #include "debugging/assert.h"
+#include "platform/worker.h"
 
 /* Try to solve in solve_nr_remaining half-moves.
  * @param si slice index
@@ -41,6 +42,9 @@ void output_plaintext_problem_writer_solve(slice_index si)
     slice_insertion_insert(si,prototypes,nr_prototypes);
   }
 
+  if (is_worker_mode())
+    worker_emit_solving();
+
   pipe_solve_delegate(si);
 
   {
@@ -70,6 +74,9 @@ void output_plaintext_problem_writer_solve(slice_index si)
       output_plaintext_message(completeness_msg);
     }
   }
+
+  if (is_worker_mode())
+    worker_emit_finished();
 
   output_plaintext_print_time(" ","");
   output_plaintext_message(NewLine);
