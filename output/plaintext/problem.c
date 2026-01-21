@@ -3,6 +3,7 @@
 #include "output/plaintext/protocol.h"
 #include "output/plaintext/position.h"
 #include "output/plaintext/twinning.h"
+#include "output/structured/structured.h"
 #include "solving/pipe.h"
 #include "stipulation/pipe.h"
 #include "stipulation/branch.h"
@@ -41,6 +42,8 @@ void output_plaintext_problem_writer_solve(slice_index si)
     slice_insertion_insert(si,prototypes,nr_prototypes);
   }
 
+  structured_output_solving();
+
   pipe_solve_delegate(si);
 
   {
@@ -70,6 +73,8 @@ void output_plaintext_problem_writer_solve(slice_index si)
       output_plaintext_message(completeness_msg);
     }
   }
+
+  structured_output_finished();
 
   output_plaintext_print_time(" ","");
   output_plaintext_message(NewLine);
