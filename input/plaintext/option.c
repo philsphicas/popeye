@@ -12,6 +12,7 @@
 #include "options/maxflightsquares.h"
 #include "options/nontrivial.h"
 #include "optimisations/intelligent/limit_nr_solutions_per_target.h"
+#include "optimisations/intelligent/intelligent.h"
 #include "options/stoponshortsolutions/stoponshortsolutions.h"
 #include "output/plaintext/language_dependant.h"
 #include "output/plaintext/message.h"
@@ -393,6 +394,21 @@ char *ParseOpt(slice_index start)
 
       case whitetoplay:
         stipulation_modifier_instrument(start,STWhiteToPlayStipulationModifier);
+        break;
+
+      case minblockers:
+        tok = ReadNextTokStr();
+        {
+          char *end;
+          unsigned long const value = strtoul(tok,&end,10);
+          if (end!=tok && *end==0 && value<UINT_MAX)
+            set_min_blockers_constraint((unsigned int)value);
+          else
+          {
+            output_plaintext_input_error_message(WrongInt);
+            indexx = OptCount;
+          }
+        }
         break;
 
       default:

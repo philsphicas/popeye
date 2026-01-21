@@ -73,4 +73,13 @@ boolean is_line_empty(square start, square end, int dir);
  */
 boolean init_intelligent_mode(slice_index si);
 
+/* MinBlockers constraint for intelligent mode
+ * If min_blockers_count > 0, only consider target positions
+ * that require at least min_blockers_count flight blockers
+ */
+extern unsigned int min_blockers_count;
+
+/* Set minimum blockers constraint */
+void set_min_blockers_constraint(unsigned int count);
+
 #endif
