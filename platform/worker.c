@@ -108,6 +108,7 @@ static worker_info_t *workers = NULL;
 static unsigned int num_workers = 0;
 static boolean forked_worker = false;
 static volatile sig_atomic_t interrupted = 0;
+static volatile sig_atomic_t progress_requested = 0;
 static unsigned int global_solutions_found = 0;
 
 /* Progress aggregation state */
@@ -142,6 +143,12 @@ static void signal_handler(int sig)
     }
     signal(sig, SIG_DFL);
     raise(sig);
+}
+
+static void progress_signal_handler(int sig)
+{
+    (void)sig;
+    progress_requested = 1;
 }
 
 static void handle_progress(worker_info_t *w, unsigned int m, unsigned int k, unsigned long positions)
@@ -194,6 +201,36 @@ static void handle_progress(worker_info_t *w, unsigned int m, unsigned int k, un
             last_printed_depth = d;
         }
     }
+}
+
+static void dump_worker_progress(void)
+{
+    unsigned int i;
+    struct timeval now;
+    double elapsed;
+    int active = 0;
+
+    if (workers == NULL)
+        return;
+
+    gettimeofday(&now, NULL);
+    elapsed = (double)(now.tv_sec - start_time.tv_sec) +
+              (double)(now.tv_usec - start_time.tv_usec) / 1000000.0;
+
+    fprintf(stderr, "\n[Progress at %.3f s: ", elapsed);
+    for (i = 0; i < num_workers; i++)
+    {
+        if (!workers[i].finished)
+        {
+            unsigned int d = workers[i].last_depth;
+            fprintf(stderr, "W%u@%u+%u ", workers[i].partition, DECODE_M(d), DECODE_K(d));
+            active++;
+        }
+    }
+    if (active == 0)
+        fprintf(stderr, "all finished");
+    fprintf(stderr, "| %u solutions]", global_solutions_found);
+    fflush(stderr);
 }
 
 static void process_worker_line(worker_info_t *w, char const *line)
@@ -309,7 +346,6 @@ boolean is_forked_worker(void)
 
 boolean parallel_fork_workers(void)
 {
-    struct timeval end_time;
     unsigned int i;
     int active_workers;
 
@@ -338,9 +374,10 @@ boolean parallel_fork_workers(void)
     /* Install signal handlers */
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
+    signal(SIGUSR1, progress_signal_handler);
 
-    printf("\nParallel solving with %u workers (fork-after-setup)\n\n", num_workers);
-    fflush(stdout);
+    fprintf(stderr, "\nUsing %u parallel workers (send SIGUSR1 for progress)\n", num_workers);
+    fflush(stderr);
 
     /* Fork workers */
     for (i = 1; i <= num_workers; i++)
@@ -413,12 +450,14 @@ boolean parallel_fork_workers(void)
 
     /* Parent: collect output from all workers */
     active_workers = (int)num_workers;
+    struct timeval last_status_time = start_time;
     while (active_workers > 0 && !interrupted)
     {
         fd_set readfds;
         int maxfd = 0;
         int ready;
         struct timeval timeout;
+        struct timeval now;
 
         FD_ZERO(&readfds);
         for (i = 0; i < num_workers; i++)
@@ -436,6 +475,34 @@ boolean parallel_fork_workers(void)
 
         ready = select(maxfd + 1, &readfds, NULL, NULL, &timeout);
 
+        /* Check for progress dump request (SIGUSR1) */
+        if (progress_requested)
+        {
+            progress_requested = 0;
+            dump_worker_progress();
+        }
+
+        /* Periodic status update every 10 seconds if workers still running */
+        gettimeofday(&now, NULL);
+        if (active_workers > 0)
+        {
+            double since_last = (double)(now.tv_sec - last_status_time.tv_sec) +
+                                (double)(now.tv_usec - last_status_time.tv_usec) / 1000000.0;
+            if (since_last >= 10.0)
+            {
+                double elapsed = (double)(now.tv_sec - start_time.tv_sec) +
+                                 (double)(now.tv_usec - start_time.tv_usec) / 1000000.0;
+                fprintf(stderr, "\n[%.0fs: %d/%u workers running: ",
+                        elapsed, active_workers, num_workers);
+                for (i = 0; i < num_workers; i++)
+                    if (!workers[i].finished)
+                        fprintf(stderr, "%u ", workers[i].partition);
+                fprintf(stderr, "]");
+                fflush(stderr);
+                last_status_time = now;
+            }
+        }
+
         if (ready > 0)
         {
             for (i = 0; i < num_workers; i++)
@@ -449,16 +516,20 @@ boolean parallel_fork_workers(void)
                         close(workers[i].pipe_fd);
                         workers[i].pipe_fd = -1;
                         active_workers--;
-                        /* Only report when few workers remain */
-                        if (active_workers > 0 && active_workers <= 8)
+                        /* Report when worker finishes */
+                        if (active_workers > 0)
                         {
                             unsigned int j;
-                            fprintf(stderr, "[Worker %u finished. Still running (%d): ",
-                                    workers[i].partition, active_workers);
+                            double elapsed = (double)(now.tv_sec - start_time.tv_sec) +
+                                             (double)(now.tv_usec - start_time.tv_usec) / 1000000.0;
+                            fprintf(stderr, "\n[%.0fs: Worker %u/%u finished. Still running (%d): ",
+                                    elapsed, workers[i].partition, num_workers, active_workers);
                             for (j = 0; j < num_workers; j++)
                                 if (!workers[j].finished)
                                     fprintf(stderr, "%u ", workers[j].partition);
-                            fprintf(stderr, "]\n");
+                            fprintf(stderr, "]");
+                            fflush(stderr);
+                            last_status_time = now;
                         }
                     }
                 }
@@ -482,14 +553,6 @@ boolean parallel_fork_workers(void)
             close(workers[i].pipe_fd);
             workers[i].pipe_fd = -1;
         }
-    }
-
-    /* Print total time */
-    gettimeofday(&end_time, NULL);
-    {
-        double elapsed = (double)(end_time.tv_sec - start_time.tv_sec) +
-                         (double)(end_time.tv_usec - start_time.tv_usec) / 1000000.0;
-        printf("\nTotal parallel time: %.3f s\n", elapsed);
     }
 
     free(workers);
