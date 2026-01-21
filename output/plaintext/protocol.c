@@ -2,7 +2,7 @@
 #include "output/plaintext/stdio.h"
 #include "output/plaintext/stipulation.h"
 #include "output/plaintext/sstipulation.h"
-#include "platform/worker.h"
+#include "output/structured/structured.h"
 
 #include <stdarg.h>
 #include <stdio.h>
@@ -11,19 +11,19 @@
 static FILE *TraceFile;
 static char const *open_mode = "a";
 
-/* Worker mode line buffering for solution output */
-#define WORKER_LINE_BUFFER_SIZE 8192
-static char worker_line_buffer[WORKER_LINE_BUFFER_SIZE];
-static size_t worker_line_pos = 0;
+/* Structured output mode line buffering for solution output */
+#define STRUCTURED_LINE_BUFFER_SIZE 8192
+static char structured_line_buffer[STRUCTURED_LINE_BUFFER_SIZE];
+static size_t structured_line_pos = 0;
 
-/* Flush buffered line to worker protocol */
-static void flush_worker_line_buffer(void)
+/* Flush buffered line to structured protocol */
+static void flush_structured_line_buffer(void)
 {
-  if (worker_line_pos > 0)
+  if (structured_line_pos > 0)
   {
-    worker_line_buffer[worker_line_pos] = '\0';
-    worker_emit_solution_text(worker_line_buffer);
-    worker_line_pos = 0;
+    structured_line_buffer[structured_line_pos] = '\0';
+    structured_output_solution_text(structured_line_buffer);
+    structured_line_pos = 0;
   }
 }
 
@@ -83,23 +83,23 @@ int protocol_fputc(int c, FILE *regular)
   int result;
   
   /* Worker mode: buffer stdout output and emit via @@TEXT protocol */
-  if (is_worker_mode() && regular == stdout)
+  if (is_structured_output_mode() && regular == stdout)
   {
     if (c == '\n')
     {
-      flush_worker_line_buffer();
+      flush_structured_line_buffer();
       result = c;
     }
-    else if (worker_line_pos < WORKER_LINE_BUFFER_SIZE - 1)
+    else if (structured_line_pos < STRUCTURED_LINE_BUFFER_SIZE - 1)
     {
-      worker_line_buffer[worker_line_pos++] = (char)c;
+      structured_line_buffer[structured_line_pos++] = (char)c;
       result = c;
     }
     else
     {
       /* Buffer full - flush and add char */
-      flush_worker_line_buffer();
-      worker_line_buffer[worker_line_pos++] = (char)c;
+      flush_structured_line_buffer();
+      structured_line_buffer[structured_line_pos++] = (char)c;
       result = c;
     }
   }
@@ -123,9 +123,9 @@ int protocol_vfprintf(FILE *regular, char const *format, va_list args)
   int result;
 
   /* Worker mode: buffer stdout output and emit via @@TEXT protocol */
-  if (is_worker_mode() && regular == stdout)
+  if (is_structured_output_mode() && regular == stdout)
   {
-    char temp_buffer[WORKER_LINE_BUFFER_SIZE];
+    char temp_buffer[STRUCTURED_LINE_BUFFER_SIZE];
     va_list args_copy;
     
     va_copy(args_copy, args);
@@ -137,17 +137,17 @@ int protocol_vfprintf(FILE *regular, char const *format, va_list args)
     {
       if (*p == '\n')
       {
-        flush_worker_line_buffer();
+        flush_structured_line_buffer();
       }
-      else if (worker_line_pos < WORKER_LINE_BUFFER_SIZE - 1)
+      else if (structured_line_pos < STRUCTURED_LINE_BUFFER_SIZE - 1)
       {
-        worker_line_buffer[worker_line_pos++] = *p;
+        structured_line_buffer[structured_line_pos++] = *p;
       }
       else
       {
         /* Buffer full - flush and add char */
-        flush_worker_line_buffer();
-        worker_line_buffer[worker_line_pos++] = *p;
+        flush_structured_line_buffer();
+        structured_line_buffer[structured_line_pos++] = *p;
       }
     }
   }
@@ -281,9 +281,9 @@ unsigned int protocol_write_sstipulation(FILE *regular, slice_index si)
 int protocol_fflush(FILE *regular)
 {
   /* Worker mode: flush any buffered content */
-  if (is_worker_mode() && regular == stdout)
+  if (is_structured_output_mode() && regular == stdout)
   {
-    flush_worker_line_buffer();
+    flush_structured_line_buffer();
   }
 
   if (TraceFile!=0)

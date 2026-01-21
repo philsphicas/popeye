@@ -1,0 +1,7 @@
+# -*- Makefile -*-
+#
+SRC_CFILES = structured.c
+
+INCLUDES = structured.h
+
+include makefile.rules $(CURRPWD)depend

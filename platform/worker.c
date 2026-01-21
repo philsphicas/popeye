@@ -1,9 +1,14 @@
-/* Worker mode implementation for structured subprocess output.
- * 
- * See worker.h for protocol documentation.
+/* Worker mode implementation for parallel subprocess coordination.
+ *
+ * This module handles:
+ * - Worker mode flag (enables structured output)
+ * - Parallel mode coordination (forking workers, aggregating results)
+ *
+ * For the structured output protocol itself, see output/structured/structured.h
  */
 
 #include "platform/worker.h"
+#include "output/structured/structured.h"
 #include "options/maxsolutions/maxsolutions.h"
 #include "options/options.h"
 #include <stdio.h>
@@ -14,6 +19,8 @@ static boolean worker_mode_enabled = false;
 void set_worker_mode(boolean enabled)
 {
   worker_mode_enabled = enabled;
+  /* Worker mode implies structured output */
+  set_structured_output_mode(enabled);
 }
 
 boolean is_worker_mode(void)
@@ -61,124 +68,6 @@ boolean is_parallel_mode(void)
 boolean parallel_solving_completed(void)
 {
   return parallel_done;
-}
-
-/* Lifecycle messages - stdout */
-
-void worker_emit_ready(void)
-{
-  if (worker_mode_enabled)
-  {
-    fprintf(stderr, "@@READY\n");
-    fflush(stderr);
-  }
-}
-
-void worker_emit_solving(void)
-{
-  if (worker_mode_enabled)
-  {
-    fprintf(stderr, "@@SOLVING\n");
-    fflush(stderr);
-  }
-}
-
-void worker_emit_finished(void)
-{
-  if (worker_mode_enabled)
-  {
-    fprintf(stderr, "@@FINISHED\n");
-    fflush(stderr);
-  }
-}
-
-void worker_emit_partial(void)
-{
-  if (worker_mode_enabled)
-  {
-    fprintf(stderr, "@@PARTIAL\n");
-    fflush(stderr);
-  }
-}
-
-/* Multi-problem messages - stdout */
-
-void worker_emit_problem_start(unsigned int index)
-{
-  if (worker_mode_enabled)
-  {
-    fprintf(stderr, "@@PROBLEM_START:%u\n", index);
-    fflush(stderr);
-  }
-}
-
-void worker_emit_problem_end(unsigned int index)
-{
-  if (worker_mode_enabled)
-  {
-    fprintf(stderr, "@@PROBLEM_END:%u\n", index);
-    fflush(stderr);
-  }
-}
-
-/* Solution messages - stdout */
-
-void worker_emit_solution_start(void)
-{
-  if (worker_mode_enabled)
-  {
-    fprintf(stderr, "@@SOLUTION_START\n");
-    fflush(stderr);
-  }
-}
-
-void worker_emit_solution_text(char const *line)
-{
-  if (worker_mode_enabled)
-  {
-    fprintf(stderr, "@@TEXT:%s\n", line);
-    fflush(stderr);
-  }
-}
-
-void worker_emit_solution_end(void)
-{
-  if (worker_mode_enabled)
-  {
-    fprintf(stderr, "@@SOLUTION_END\n");
-    fflush(stderr);
-  }
-}
-
-/* Timing - stdout */
-
-void worker_emit_time(double seconds)
-{
-  if (worker_mode_enabled)
-  {
-    fprintf(stderr, "@@TIME:%.3f\n", seconds);
-    fflush(stderr);
-  }
-}
-
-/* Progress messages - stderr */
-
-void worker_emit_heartbeat(unsigned long seconds)
-{
-  if (worker_mode_enabled)
-  {
-    fprintf(stderr, "@@HEARTBEAT:%lu\n", seconds);
-    fflush(stderr);
-  }
-}
-
-void worker_emit_progress(unsigned int m, unsigned int k, unsigned long positions)
-{
-  if (worker_mode_enabled)
-  {
-    fprintf(stderr, "@@PROGRESS:%u+%u:%lu\n", m, k, positions);
-    fflush(stderr);
-  }
 }
 
 /* === Fork-based parallel solving === */

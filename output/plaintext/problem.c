@@ -3,13 +3,13 @@
 #include "output/plaintext/protocol.h"
 #include "output/plaintext/position.h"
 #include "output/plaintext/twinning.h"
+#include "output/structured/structured.h"
 #include "solving/pipe.h"
 #include "stipulation/pipe.h"
 #include "stipulation/branch.h"
 #include "stipulation/slice_insertion.h"
 #include "solving/incomplete.h"
 #include "debugging/assert.h"
-#include "platform/worker.h"
 
 /* Try to solve in solve_nr_remaining half-moves.
  * @param si slice index
@@ -42,8 +42,7 @@ void output_plaintext_problem_writer_solve(slice_index si)
     slice_insertion_insert(si,prototypes,nr_prototypes);
   }
 
-  if (is_worker_mode())
-    worker_emit_solving();
+  structured_output_solving();
 
   pipe_solve_delegate(si);
 
@@ -75,8 +74,7 @@ void output_plaintext_problem_writer_solve(slice_index si)
     }
   }
 
-  if (is_worker_mode())
-    worker_emit_finished();
+  structured_output_finished();
 
   output_plaintext_print_time(" ","");
   output_plaintext_message(NewLine);

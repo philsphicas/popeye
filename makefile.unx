@@ -243,6 +243,7 @@ NESTEDSRCDIRS = . platform $(PLATFORMS) $(TOOLCHAINS) scripts \
     output \
     output/latex output/latex/tree output/latex/line \
     output/plaintext output/plaintext/tree output/plaintext/line \
+    output/structured \
     utilities debugging
 
 NESTEDLIBDIRS = \
@@ -295,6 +296,7 @@ NESTEDLIBDIRS = \
     output \
     output/latex output/latex/line output/latex/tree output/latex \
     output/plaintext output/plaintext/tree output/plaintext/line \
+    output/structured \
     position position/effects \
     platform platform/$(PLATFORM) \
     utilities debugging \

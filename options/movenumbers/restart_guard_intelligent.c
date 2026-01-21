@@ -8,7 +8,7 @@
 #include "optimisations/intelligent/moves_left.h"
 #include "optimisations/intelligent/intelligent.h"
 #include "platform/maxtime.h"
-#include "platform/worker.h"
+#include "output/structured/structured.h"
 #include "options/options.h"
 #include "output/output.h"
 #include "output/plaintext/protocol.h"
@@ -70,9 +70,9 @@ static boolean is_length_ruled_out_by_option_restart(void)
 static void print_nr_potential_target_positions(void)
 {
   /* Emit structured progress for parallel parent to aggregate */
-  if (is_worker_mode())
+  if (is_structured_output_mode())
   {
-    worker_emit_progress(MovesLeft[White], MovesLeft[Black], nr_potential_target_positions);
+    structured_output_progress(MovesLeft[White], MovesLeft[Black], nr_potential_target_positions);
   }
   else
   {
