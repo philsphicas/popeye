@@ -665,7 +665,8 @@ static char const * const OptString[LanguageCount][OptCount] =
   /*36*/  "JusquAuCoup",
   /*37*/  "TrivialEssaiSupprimer",
   /*38*/  "MatsEn1",
-  /*39*/  "MinBloqueurs"
+  /*39*/  "MinBloqueurs",
+  /*40*/  "CaseMat"
   },{
   /* Deutsch German Allemand */
   /* 0*/  "Widerlegung",
@@ -707,7 +708,8 @@ static char const * const OptString[LanguageCount][OptCount] =
   /*36*/  "BisZugnummer",
   /*37*/  "TrivialeFehlversucheUnterdruecken",
   /*38*/  "MattsIn1",
-  /*39*/  "MinBlocker"
+  /*39*/  "MinBlocker",
+  /*40*/  "MattFeld"
   },{
   /* English Anglais Englisch */
   /* 0*/  "Defence",
@@ -749,7 +751,8 @@ static char const * const OptString[LanguageCount][OptCount] =
   /*36*/  "UpToMoveNumber",
   /*37*/  "TrivialTriesAvoid",
   /*38*/  "MatesIn1",
-  /*39*/  "MinBlockers"
+  /*39*/  "MinBlockers",
+  /*40*/  "MatingSquare"
   }
 };
 

@@ -82,4 +82,26 @@ extern unsigned int min_blockers_count;
 /* Set minimum blockers constraint */
 void set_min_blockers_constraint(unsigned int count);
 
+/* MatingSquare constraint for intelligent mode
+ * When mating_square_constrained is true, only consider target positions
+ * where the black king ends up on an allowed square
+ */
+extern boolean mating_square_constrained;
+extern boolean mating_square_allowed[nr_squares_on_board];
+
+/* Reset mating square constraints (allow all squares) */
+void reset_mating_square_constraints(void);
+
+/* Allow only edge squares as mating squares */
+void mating_square_allow_edge(void);
+
+/* Allow only corner squares as mating squares */
+void mating_square_allow_corner(void);
+
+/* Allow only middle (non-edge) squares as mating squares */
+void mating_square_allow_middle(void);
+
+/* Allow a specific square as a mating square */
+void mating_square_allow_square(square sq);
+
 #endif

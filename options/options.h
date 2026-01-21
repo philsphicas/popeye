@@ -47,8 +47,9 @@ typedef enum
   trivialtriesavoided,  /* 37 */
   matesin1,        /* 38 */
   minblockers,     /* 39 */
+  matingsquare,    /* 40 */
 
-  OptCount         /* 40 */
+  OptCount         /* 41 */
 } Opt;
 
 extern boolean OptFlag[OptCount];
