@@ -108,7 +108,6 @@ static worker_info_t *workers = NULL;
 static unsigned int num_workers = 0;
 static boolean forked_worker = false;
 static volatile sig_atomic_t interrupted = 0;
-static volatile sig_atomic_t progress_requested = 0;
 static unsigned int global_solutions_found = 0;
 
 /* Progress aggregation state */
@@ -143,12 +142,6 @@ static void signal_handler(int sig)
     }
     signal(sig, SIG_DFL);
     raise(sig);
-}
-
-static void progress_signal_handler(int sig)
-{
-    (void)sig;
-    progress_requested = 1;
 }
 
 static void handle_progress(worker_info_t *w, unsigned int m, unsigned int k, unsigned long positions)
@@ -201,36 +194,6 @@ static void handle_progress(worker_info_t *w, unsigned int m, unsigned int k, un
             last_printed_depth = d;
         }
     }
-}
-
-static void dump_worker_progress(void)
-{
-    unsigned int i;
-    struct timeval now;
-    double elapsed;
-    int active = 0;
-
-    if (workers == NULL)
-        return;
-
-    gettimeofday(&now, NULL);
-    elapsed = (double)(now.tv_sec - start_time.tv_sec) +
-              (double)(now.tv_usec - start_time.tv_usec) / 1000000.0;
-
-    fprintf(stderr, "\n[Progress at %.3f s: ", elapsed);
-    for (i = 0; i < num_workers; i++)
-    {
-        if (!workers[i].finished)
-        {
-            unsigned int d = workers[i].last_depth;
-            fprintf(stderr, "W%u@%u+%u ", workers[i].partition, DECODE_M(d), DECODE_K(d));
-            active++;
-        }
-    }
-    if (active == 0)
-        fprintf(stderr, "all finished");
-    fprintf(stderr, "| %u solutions]", global_solutions_found);
-    fflush(stderr);
 }
 
 static void process_worker_line(worker_info_t *w, char const *line)
@@ -374,9 +337,8 @@ boolean parallel_fork_workers(void)
     /* Install signal handlers */
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
-    signal(SIGUSR1, progress_signal_handler);
 
-    fprintf(stderr, "\nUsing %u parallel workers (send SIGUSR1 for progress)\n", num_workers);
+    fprintf(stderr, "\nUsing %u parallel workers\n", num_workers);
     fflush(stderr);
 
     /* Fork workers */
@@ -474,13 +436,6 @@ boolean parallel_fork_workers(void)
         timeout.tv_usec = 0;
 
         ready = select(maxfd + 1, &readfds, NULL, NULL, &timeout);
-
-        /* Check for progress dump request (SIGUSR1) */
-        if (progress_requested)
-        {
-            progress_requested = 0;
-            dump_worker_progress();
-        }
 
         /* Periodic status update every 10 seconds if workers still running */
         gettimeofday(&now, NULL);
