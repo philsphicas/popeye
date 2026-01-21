@@ -108,7 +108,7 @@ namespace eval language {
 	}
 
 	namespace eval input {
-	    variable BeginProblem "DebugProblem"
+	    variable BeginProblem "DebutProbleme"
 	    variable NextProblem "Asuivre"
 	    variable EndProblem "FinProblem"
 	    variable ZeroPosition "zeroposition"
