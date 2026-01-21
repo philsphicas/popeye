@@ -304,3 +304,11 @@ boolean max_nr_solutions_found_in_phase(void)
   TraceFunctionResultEnd();
   return result;
 }
+
+/* Get the maximum allowed number of solutions for the current phase
+ * @return maximum number of solutions or UINT_MAX if unlimited
+ */
+unsigned int get_max_solutions_per_phase(void)
+{
+  return max_nr_solutions_per_phase;
+}

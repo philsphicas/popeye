@@ -4,6 +4,8 @@
  */
 
 #include "platform/worker.h"
+#include "options/maxsolutions/maxsolutions.h"
+#include "options/options.h"
 #include <stdio.h>
 
 /* === Worker mode state === */
@@ -217,10 +219,24 @@ static worker_info_t *workers = NULL;
 static unsigned int num_workers = 0;
 static boolean forked_worker = false;
 static volatile sig_atomic_t interrupted = 0;
+static unsigned int global_solutions_found = 0;
 
 /* Progress aggregation state */
 static unsigned int last_printed_depth = 0;
 static struct timeval start_time;
+
+static void kill_all_workers(void)
+{
+    unsigned int i;
+    for (i = 0; i < num_workers; i++)
+    {
+        if (workers[i].pid > 0 && !workers[i].finished)
+        {
+            kill(workers[i].pid, SIGTERM);
+            workers[i].finished = true;
+        }
+    }
+}
 
 static void signal_handler(int sig)
 {
@@ -247,6 +263,10 @@ static void handle_progress(worker_info_t *w, unsigned int m, unsigned int k, un
         w->positions_at_depth[depth] = positions;
         w->last_depth = depth;
     }
+
+    /* Only print progress if movenumbers option is enabled */
+    if (!OptFlag[movenbr])
+        return;
 
     /* Check if all workers have reached this depth */
     if (depth > last_printed_depth && workers != NULL)
@@ -300,8 +320,20 @@ static void process_worker_line(worker_info_t *w, char const *line)
         }
         else if (strncmp(line, "@@TEXT:", 7) == 0)
         {
-            printf("%s\n", line + 7);
+            char const *text = line + 7;
+            printf("%s\n", text);
             fflush(stdout);
+
+            /* Check if this is a solution line */
+            while (*text == ' ') text++;
+            if (text[0] >= '1' && text[0] <= '9' && text[1] == '.')
+            {
+                global_solutions_found++;
+                if (get_max_solutions_per_phase() < UINT_MAX && global_solutions_found >= get_max_solutions_per_phase())
+                {
+                    kill_all_workers();
+                }
+            }
         }
         else if (strncmp(line, "@@FINISHED", 10) == 0)
         {
