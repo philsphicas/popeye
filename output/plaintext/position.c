@@ -579,28 +579,32 @@ void output_plaintext_write_stipulation(slice_index si)
   TraceFunctionParam("%u",si);
   TraceFunctionParamListEnd();
 
-  // TODO these printf functions may fail
-
-  indentation += (unsigned int)protocol_fprintf(stdout,"%s","  ");
+  /* Workers don't print stipulation - parent handles it */
+  if (!is_worker_mode())
   {
-    move_effect_journal_index_type const base = move_effect_journal_base[ply_diagram_setup];
-    move_effect_journal_index_type const top = move_effect_journal_base[ply_diagram_setup+1];
-    move_effect_journal_index_type i;
+    // TODO these printf functions may fail
 
-    for (i = base; i<top; ++i)
-      if (move_effect_journal[i].type==move_effect_input_stipulation)
-      {
-        indentation += (unsigned int)protocol_write_stipulation(stdout,move_effect_journal[i].u.input_stipulation.stipulation);
-        break;
-      }
-      else if (move_effect_journal[i].type==move_effect_input_sstipulation)
-      {
-        indentation += (unsigned int)protocol_write_sstipulation(stdout,move_effect_journal[i].u.input_stipulation.stipulation);
-        break;
-      }
+    indentation += (unsigned int)protocol_fprintf(stdout,"%s","  ");
+    {
+      move_effect_journal_index_type const base = move_effect_journal_base[ply_diagram_setup];
+      move_effect_journal_index_type const top = move_effect_journal_base[ply_diagram_setup+1];
+      move_effect_journal_index_type i;
+
+      for (i = base; i<top; ++i)
+        if (move_effect_journal[i].type==move_effect_input_stipulation)
+        {
+          indentation += (unsigned int)protocol_write_stipulation(stdout,move_effect_journal[i].u.input_stipulation.stipulation);
+          break;
+        }
+        else if (move_effect_journal[i].type==move_effect_input_sstipulation)
+        {
+          indentation += (unsigned int)protocol_write_sstipulation(stdout,move_effect_journal[i].u.input_stipulation.stipulation);
+          break;
+        }
+    }
+
+    indentation += (unsigned int)WriteOptions(&being_solved);
   }
-
-  indentation += (unsigned int)WriteOptions(&being_solved);
 
   pipe_solve_delegate(si);
 
