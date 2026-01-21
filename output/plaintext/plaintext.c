@@ -1093,7 +1093,8 @@ void output_plaintext_instrument_solving_builder_solve(slice_index si)
 
 void output_plaintext_writer_solve(slice_index si)
 {
-  output_plaintext_print_version_info(stdout);
+  if (!output_plaintext_is_greeting_suppressed())
+    output_plaintext_print_version_info(stdout);
 
   {
     slice_index const prototypes[] =

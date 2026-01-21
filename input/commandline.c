@@ -96,6 +96,12 @@ static int parseCommandlineOptions(int argc, char *argv[])
       idx++;
       continue;
     }
+    else if (strcmp(argv[idx], "-nogreeting")==0)
+    {
+      output_plaintext_suppress_greeting();
+      idx++;
+      continue;
+    }
     else if (strcmp(argv[idx], "-maxtrace")==0)
     {
 #if defined(DOTRACE)

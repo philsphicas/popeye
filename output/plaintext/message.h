@@ -11,6 +11,12 @@
  */
 void output_plaintext_suppress_variable(void);
 
+/* Suppress just the greeting line (for parallel workers) */
+void output_plaintext_suppress_greeting(void);
+
+/* Check if greeting is suppressed */
+boolean output_plaintext_is_greeting_suppressed(void);
+
 /* Report a verification error that causes the current problem to be ignored
  * @param id identiifes the diagnostic message
  */

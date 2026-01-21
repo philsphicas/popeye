@@ -14,6 +14,7 @@
 #include <string.h>
 
 static boolean is_variable_output_suppressed = false;
+static boolean is_greeting_suppressed = false;
 
 #if defined(DEBUG)
 #       define  DBG(x) fprintf x
@@ -27,6 +28,17 @@ static boolean is_variable_output_suppressed = false;
 void output_plaintext_suppress_variable(void)
 {
   is_variable_output_suppressed = true;
+}
+
+/* Suppress just the greeting line (for parallel workers) */
+void output_plaintext_suppress_greeting(void)
+{
+  is_greeting_suppressed = true;
+}
+
+boolean output_plaintext_is_greeting_suppressed(void)
+{
+  return is_greeting_suppressed;
 }
 
 /* Issue a message text
