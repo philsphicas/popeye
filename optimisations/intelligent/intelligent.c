@@ -134,6 +134,46 @@ void mating_square_allow_square(square sq)
   mating_square_allowed[square_to_index(sq)] = true;
 }
 
+/* Partition support for parallel solving */
+unsigned int partition_index = 0;
+unsigned int partition_total = 0;
+unsigned int current_king_index = 0;
+
+void set_partition(unsigned int index, unsigned int total)
+{
+  partition_index = index;
+  partition_total = total;
+}
+
+void reset_partition(void)
+{
+  partition_index = 0;
+  partition_total = 0;
+}
+
+/* Check if a (king, checker, check_sq) combination is in current partition
+ *
+ * Mapping with king varying fastest:
+ *   combo_index = check_sq_idx * (64 * 15) + checker_idx * 64 + king_idx
+ *
+ * This ensures all 64 king squares are touched within the first 64 partitions,
+ * giving good progress visibility even with few workers.
+ */
+boolean is_in_partition(unsigned int king_idx,
+                        unsigned int checker_idx,
+                        unsigned int check_sq_idx)
+{
+  unsigned int combo_index;
+
+  if (partition_total == 0)
+    return true;
+
+  /* King varies fastest for good progress distribution */
+  combo_index = check_sq_idx * (64 * 15) + checker_idx * 64 + king_idx;
+
+  return (combo_index % partition_total) == partition_index;
+}
+
 typedef struct
 {
   Flags       spec[nr_squares_on_board];
@@ -444,6 +484,7 @@ static void GenerateBlackKing(slice_index si)
 {
   Flags const king_flags = black[index_of_king].flags;
   square const *bnp;
+  unsigned int king_idx;
 
   TraceFunctionEntry(__func__);
   TraceFunctionParamListEnd();
@@ -453,10 +494,10 @@ static void GenerateBlackKing(slice_index si)
   intelligent_init_reservations(MovesLeft[White],MovesLeft[Black],
                                 MaxPiece[White],MaxPiece[Black]-1);
 
-  for (bnp = boardnum; *bnp!=initsquare; ++bnp)
+  for (bnp = boardnum, king_idx = 0; *bnp!=initsquare; ++bnp, ++king_idx)
   {
     /* Check MatingSquare constraint - skip squares not in allowed set */
-    if (mating_square_constrained && !mating_square_allowed[square_to_index(*bnp)])
+    if (mating_square_constrained && !mating_square_allowed[king_idx])
       continue;
 
     if (is_square_empty(*bnp) /* *bnp isn't a hole*/
@@ -479,6 +520,9 @@ static void GenerateBlackKing(slice_index si)
       black[index_of_king].usage = piece_is_king;
 
       init_guard_dirs(*bnp);
+
+      /* Set current king index for partition checking in nested loops */
+      current_king_index = king_idx;
 
       if (goal_to_be_reached==goal_mate)
       {

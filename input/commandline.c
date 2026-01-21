@@ -1,5 +1,6 @@
 #include "input/commandline.h"
 #include "optimisations/hash.h"
+#include "optimisations/intelligent/intelligent.h"
 #include "output/plaintext/language_dependant.h"
 #include "output/plaintext/protocol.h"
 #include "platform/maxtime.h"
@@ -130,6 +131,29 @@ static int parseCommandlineOptions(int argc, char *argv[])
     else if (strcmp(argv[idx], "-notraceptr")==0)
     {
       TraceSuppressPointerValues();
+      idx++;
+      continue;
+    }
+    else if (idx+1<argc && strcmp(argv[idx], "-partition")==0)
+    {
+      /* Parse N/M format for partition (0-indexed) */
+      char *slash;
+      idx++;
+      slash = strchr(argv[idx], '/');
+      if (slash != NULL)
+      {
+        char *end;
+        unsigned long n, m;
+        n = strtoul(argv[idx], &end, 10);
+        if (end == slash)
+        {
+          m = strtoul(slash + 1, &end, 10);
+          if (*end == '\0' && n < m && m > 0)
+          {
+            set_partition((unsigned int)n, (unsigned int)m);
+          }
+        }
+      }
       idx++;
       continue;
     }
