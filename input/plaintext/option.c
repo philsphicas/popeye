@@ -411,6 +411,35 @@ char *ParseOpt(slice_index start)
         }
         break;
 
+      case matingsquare:
+        reset_mating_square_constraints();
+        tok = ReadNextTokStr();
+        while (tok[0] != '\0')
+        {
+          if (strcmp(tok, "edge") == 0)
+            mating_square_allow_edge();
+          else if (strcmp(tok, "corner") == 0)
+            mating_square_allow_corner();
+          else if (strcmp(tok, "middle") == 0)
+            mating_square_allow_middle();
+          else
+          {
+            square sq;
+            char *end = ParseSquare(tok, &sq);
+            if (end != tok && sq != initsquare)
+              mating_square_allow_square(sq);
+            else
+              break;  /* Not a square, stop parsing */
+          }
+          tok = ReadNextTokStr();
+        }
+        if (!mating_square_constrained)
+        {
+          output_plaintext_input_error_message(WrongSquareList);
+          indexx = OptCount;
+        }
+        continue;  /* Don't read another token, we already did */
+
       default:
         /* no extra action required */
         break;
