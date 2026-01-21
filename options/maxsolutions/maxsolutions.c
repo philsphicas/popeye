@@ -11,6 +11,7 @@
 #include "solving/incomplete.h"
 #include "debugging/trace.h"
 #include "debugging/assert.h"
+#include "platform/worker.h"
 
 #include <limits.h>
 
@@ -293,10 +294,21 @@ boolean max_nr_solutions_found_in_phase(void)
   TraceFunctionEntry(__func__);
   TraceFunctionParamListEnd();
 
-  result = nr_solutions_found_in_phase>=max_nr_solutions_per_phase;
+  if (is_worker_mode())
+    result = false;  /* Workers don't enforce maxsol - parent tracks globally */
+  else
+    result = nr_solutions_found_in_phase>=max_nr_solutions_per_phase;
 
   TraceFunctionExit(__func__);
   TraceFunctionResult("%u",result);
   TraceFunctionResultEnd();
   return result;
+}
+
+/* Get the maximum allowed number of solutions for the current phase
+ * @return maximum number of solutions or UINT_MAX if unlimited
+ */
+unsigned int get_max_solutions_per_phase(void)
+{
+  return max_nr_solutions_per_phase;
 }
