@@ -19,6 +19,10 @@ include toolchains/gcc/make.incl
 # Compiler options
 # ================
 
+# Disable LTO - it can cause issues on some systems (e.g., macOS)
+CCOPTIM := $(filter-out -flto,$(CCOPTIM))
+LDOPTIM := $(filter-out -flto,$(LDOPTIM))
+
 # abort with a descriptive message if undefined behavior is detected
 #DBG=-fsanitize=undefined -fno-sanitize-recover
 

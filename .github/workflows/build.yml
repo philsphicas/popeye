@@ -1,0 +1,188 @@
+name: Build Popeye
+
+on:
+  push:
+    branches: [ master, develop, feature/* ]
+    tags:
+      - 'v[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+'
+  pull_request:
+    branches: [ master, develop ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/popeye
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y build-essential mingw-w64 gcc-aarch64-linux-gnu
+
+    - name: Build Linux x86_64 binary
+      run: |
+        make -f makefile.unx TOOLCHAIN=gcc -j$(nproc)
+        strip py
+        mv py py-linux-x86_64
+
+    - name: Build Linux ARM64 binary (cross-compile)
+      run: |
+        make -f makefile.unx clean
+        rm -f py  # Ensure no stale binary
+        make -f makefile.unx CC=aarch64-linux-gnu-gcc LD=aarch64-linux-gnu-gcc -j$(nproc)
+        file py  # Verify it's ARM64
+        aarch64-linux-gnu-strip py
+        mv py py-linux-arm64
+
+    - name: Create Windows cross-compile toolchain
+      run: |
+        mkdir -p toolchains/cross-x86_64-w64-mingw32
+        cat > toolchains/cross-x86_64-w64-mingw32/make.incl << 'EOF'
+        include toolchains/gcc/make.incl
+        CCTARGET=x86_64-w64-mingw32-gcc
+        LDTARGET=x86_64-w64-mingw32-gcc -Wl,--stack,16777216
+        STRIPTARGET=x86_64-w64-mingw32-strip
+        ARCHIVER=x86_64-w64-mingw32-ar rv
+        ARCHIVE_INDEXER=x86_64-w64-mingw32-ranlib
+        _WIN32_WINNT_WIN2K=0x0500
+        OTHER+=$(DEFINEMACRO)_WIN32_WINNT=$(_WIN32_WINNT_WIN2K)
+        TARGETLIBS=-lwinmm
+        OBJ_SUFFIX=.obj
+        LIB_SUFFIX=libwin64.a
+        EXE_PLATFORM_MARK=win64
+        EXE_SUFFIX=.exe
+        OSTYPE=Windows
+        PLATFORM=windows64
+        DEFS += $(DEFINEMACRO)SIXTYFOUR
+        EOF
+        cat > toolchains/cross-x86_64-w64-mingw32/makefile.local << 'EOF'
+        CURRPWD ?= ./
+        include $(CURRPWD)makefile.local
+        EOF
+
+    - name: Build Windows x86_64 binary
+      run: |
+        make -f makefile.unx clean
+        rm -f py pywin64.exe  # Ensure no stale binary
+        make -f makefile.unx TOOLCHAIN=cross-x86_64-w64-mingw32 -j$(nproc)
+
+    - name: Upload Linux x86_64 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: py-linux-x86_64
+        path: py-linux-x86_64
+
+    - name: Upload Linux ARM64 artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: py-linux-arm64
+        path: py-linux-arm64
+
+    - name: Upload Windows artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: pywin64.exe
+        path: pywin64.exe
+
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata for Docker
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          # Tag with "latest" for default branch (master)
+          type=raw,value=latest,enable={{is_default_branch}}
+          # Tag with version from git tag (handles both v4.99 and 4.99 formats)
+          type=match,pattern=v?(\d+\.\d+),group=1
+          # Tag with branch name
+          type=ref,event=branch
+          # Tag with short SHA for all builds
+          type=sha,prefix=
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: ${{ github.event_name != 'pull_request' && steps.meta.outputs.tags != '' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Prepare release files
+      run: |
+        mkdir release
+        cp artifacts/py-linux-x86_64/py-linux-x86_64 release/
+        cp artifacts/py-linux-arm64/py-linux-arm64 release/
+        cp artifacts/pywin64.exe/pywin64.exe release/
+        chmod +x release/py-linux-*
+        ls -la release/
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: Popeye ${{ github.ref_name }}
+        body: |
+          Popeye chess problem solver - ${{ github.ref_name }}
+          
+          **Binaries:**
+          - `py-linux-x86_64` - Linux AMD/Intel 64-bit
+          - `py-linux-arm64` - Linux ARM64 (Graviton, Apple Silicon under Linux)
+          - `pywin64.exe` - Windows 64-bit
+          
+          **Docker (multi-arch amd64 + arm64):**
+          ```
+          docker run -i ghcr.io/${{ env.IMAGE_NAME }}:${{ github.ref_name }} < problem.inp
+          ```
+          
+          **Using spinach wrapper:**
+          ```
+          docker run -i ghcr.io/${{ env.IMAGE_NAME }}:${{ github.ref_name }} spinach < problems.inp
+          ```
+        files: release/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
