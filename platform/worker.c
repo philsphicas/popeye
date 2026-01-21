@@ -220,7 +220,8 @@ static void process_worker_line(worker_info_t *w, char const *line)
             if (*p == '\0')
                 return;  /* Don't print whitespace-only text */
             
-            printf("%s\n", text);
+            /* Match original style: leading newline, no trailing */
+            printf("\n%s", text);
             fflush(stdout);
 
             /* Check if this is a solution line */
