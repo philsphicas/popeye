@@ -264,6 +264,14 @@ void reset_nr_found_solutions_per_phase(void)
   TraceFunctionResultEnd();
 }
 
+/* Get the maximum number of solutions per phase
+ * @return the maximum, or UINT_MAX if unlimited
+ */
+unsigned int get_max_solutions_per_phase(void)
+{
+  return max_nr_solutions_per_phase;
+}
+
 /* Increase the number of found solutions by 1
  */
 void increase_nr_found_solutions(slice_index si)

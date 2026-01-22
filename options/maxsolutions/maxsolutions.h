@@ -29,6 +29,11 @@ void maxsolutions_instrument_problem(slice_index si,
  */
 void reset_nr_found_solutions_per_phase(void);
 
+/* Get the maximum number of solutions per phase
+ * @return the maximum, or UINT_MAX if unlimited
+ */
+unsigned int get_max_solutions_per_phase(void);
+
 /* Increase the number of found solutions by 1
  */
 void increase_nr_found_solutions(slice_index interruption);

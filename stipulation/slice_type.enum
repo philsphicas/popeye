@@ -659,6 +659,7 @@
     ENUMERATOR(STOutputPlainTextQuodlibetWriter),                       \
     ENUMERATOR(STOutputPlainTextGridWriter),                            \
     ENUMERATOR(STOutputPlainTextEndOfPositionWriters),                  \
+    ENUMERATOR(STParallelWorkerForker), /* fork for parallel worker processes */ \
     ENUMERATOR(STOutputPlaintextZeropositionIntroWriter),               \
     ENUMERATOR(STOutputPlaintextTwinIntroWriter),                       \
     ENUMERATOR(STIllegalSelfcheckWriter), /* indicate illegal self-check in the diagram position */ \

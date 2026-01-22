@@ -7,6 +7,7 @@
 #include "platform/heartbeat.h"
 #include "platform/maxmem.h"
 #include "platform/worker.h"
+#include "platform/parallel.h"
 #include "options/options.h"
 #include "input/plaintext/memory.h"
 #include "stipulation/pipe.h"
@@ -111,6 +112,20 @@ static int parseCommandlineOptions(int argc, char *argv[])
       set_worker_mode(true);
       output_plaintext_suppress_greeting();
       OptFlag[noboard] = true;  /* Suppress board diagram */
+      idx++;
+      continue;
+    }
+    else if (idx+1<argc && strcmp(argv[idx], "-parallel")==0)
+    {
+      /* Parallel mode: spawn N workers with king-partitioned search */
+      char *end;
+      unsigned long n;
+      idx++;
+      n = strtoul(argv[idx], &end, 10);
+      if (*end == '\0' && n > 0 && n <= 64)
+      {
+        set_parallel_worker_count((unsigned int)n);
+      }
       idx++;
       continue;
     }

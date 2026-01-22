@@ -365,6 +365,7 @@
 #include "platform/maxmem.h"
 #include "platform/timer.h"
 #include "platform/heartbeat.h"
+#include "platform/parallel_fork.h"
 
 /* Try to solve in solve_nr_remaining half-moves.
  * @param si slice index
@@ -1929,6 +1930,10 @@ void dispatch(slice_index si)
 
     case STOutputPlainTextEndOfPositionWriters:
       output_plaintext_end_of_position_writers_solve(si);
+      break;
+
+    case STParallelWorkerForker:
+      parallel_worker_forker_solve(si);
       break;
 
     case STZeroPositionInitialiser:

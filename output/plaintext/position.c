@@ -26,6 +26,7 @@
 #include "solving/pipe.h"
 #include "stipulation/pipe.h"
 #include "stipulation/branch.h"
+#include "platform/parallel_fork.h"
 #include "debugging/assert.h"
 
 #include <ctype.h>
@@ -901,7 +902,8 @@ void output_plaintext_build_position_writers(slice_index si)
         alloc_position_handler(STOutputPlainTextRoyalPiecePositionsWriter,&being_solved),
         alloc_position_handler(STOutputPlainTextNonRoyalAttributesWriter,&being_solved),
         alloc_pipe(STOutputPlainTextConditionsWriter),
-        alloc_pipe(STOutputPlainTextEndOfPositionWriters)
+        alloc_pipe(STOutputPlainTextEndOfPositionWriters),
+        alloc_parallel_worker_forker()
     };
     enum { nr_prototypes = sizeof prototypes / sizeof prototypes[0] };
     slice_insertion_insert(si,prototypes,nr_prototypes);
