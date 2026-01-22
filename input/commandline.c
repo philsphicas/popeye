@@ -1,5 +1,6 @@
 #include "input/commandline.h"
 #include "optimisations/hash.h"
+#include "optimisations/intelligent/intelligent.h"
 #include "output/plaintext/language_dependant.h"
 #include "output/plaintext/protocol.h"
 #include "platform/maxtime.h"
@@ -141,6 +142,67 @@ static int parseCommandlineOptions(int argc, char *argv[])
     else if (strcmp(argv[idx], "-notraceptr")==0)
     {
       TraceSuppressPointerValues();
+      idx++;
+      continue;
+    }
+    else if (idx+1<argc && strcmp(argv[idx], "-partition")==0)
+    {
+      /* Parse N/M format for partition (1-indexed, user-friendly)
+       * Example: -partition 1/4 means partition 1 of 4
+       * Internally converted to 0-indexed for set_partition()
+       */
+      char *slash;
+      idx++;
+      slash = strchr(argv[idx], '/');
+      if (slash != NULL)
+      {
+        char *end;
+        unsigned long n, m;
+        n = strtoul(argv[idx], &end, 10);
+        if (end == slash)
+        {
+          m = strtoul(slash + 1, &end, 10);
+          if (*end == '\0' && n >= 1 && n <= m && m > 0)
+          {
+            /* Convert from 1-indexed to 0-indexed */
+            set_partition((unsigned int)(n - 1), (unsigned int)m);
+          }
+        }
+      }
+      idx++;
+      continue;
+    }
+    else if (idx+1<argc && strcmp(argv[idx], "-partition-range")==0)
+    {
+      /* Parse START/STRIDE/TOTAL format for strided partition (0-indexed)
+       * Example: -partition-range 0/64/61440 handles partitions 0,64,128,...
+       * This allows distributing 61,440 partitions across 64 workers via striding
+       */
+      char *slash1, *slash2;
+      idx++;
+      slash1 = strchr(argv[idx], '/');
+      if (slash1 != NULL)
+      {
+        slash2 = strchr(slash1 + 1, '/');
+        if (slash2 != NULL)
+        {
+          char *end;
+          unsigned long start, stride, total;
+          start = strtoul(argv[idx], &end, 10);
+          if (end == slash1)
+          {
+            stride = strtoul(slash1 + 1, &end, 10);
+            if (end == slash2)
+            {
+              total = strtoul(slash2 + 1, &end, 10);
+              if (*end == '\0' && stride > 0 && total > 0 && start < total)
+              {
+                set_partition_range((unsigned int)start, (unsigned int)stride, (unsigned int)total);
+              }
+            }
+          }
+        }
+      }
       idx++;
       continue;
     }

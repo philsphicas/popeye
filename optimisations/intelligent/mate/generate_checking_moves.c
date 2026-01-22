@@ -369,11 +369,15 @@ void intelligent_mate_generate_checking_moves(slice_index si)
     for (index = 1; index<MaxPiece[White]; ++index)
     {
       square const *bnp;
+      unsigned int check_sq_idx;
+      /* checker_idx is 0-based (index is 1-based piece index) */
+      unsigned int const checker_idx = index - 1;
 
       white[index].usage = piece_gives_check;
 
-      for (bnp = boardnum; *bnp!=initsquare; ++bnp)
-        if (is_square_empty(*bnp))
+      for (bnp = boardnum, check_sq_idx = 0; *bnp!=initsquare; ++bnp, ++check_sq_idx)
+        if (is_square_empty(*bnp)
+            && is_in_partition(current_king_index, checker_idx, check_sq_idx))
         {
           switch (white[index].type)
           {
