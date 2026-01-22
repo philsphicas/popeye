@@ -1,0 +1,10 @@
+beginproblem
+
+remark Simple mate in 2 for testing
+author Test Author
+title Test Problem (English)
+pieces white ke1 qd1 ra1h1
+       black ke8 ra8h8
+stipulation #2
+
+endproblem
