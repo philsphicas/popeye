@@ -2,6 +2,7 @@
 #include "stipulation/stipulation.h"
 #include "optimisations/intelligent/intelligent.h"
 #include "optimisations/intelligent/duplicate_avoider.h"
+#include "platform/worker.h"
 #include "solving/pipe.h"
 #include "debugging/trace.h"
 #include "debugging/assert.h"

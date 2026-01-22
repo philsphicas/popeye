@@ -3,6 +3,7 @@
 #include "output/plaintext/language_dependant.h"
 #include "output/latex/latex.h"
 #include "platform/priority.h"
+#include "platform/parallel.h"
 #include "position/effects/piece_creation.h"
 #include "position/effects/piece_readdition.h"
 #include "position/effects/piece_removal.h"
@@ -39,6 +40,9 @@ int main(int argc, char *argv[])
   TraceFunctionParamListEnd();
 
   checkGlobalAssumptions();
+
+  /* Store args for parallel worker spawning (before any parsing) */
+  store_worker_args(argc, argv);
 
   platform_set_nice_priority();
 

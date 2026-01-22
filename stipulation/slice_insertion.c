@@ -731,6 +731,7 @@ static slice_index const slice_rank_order[] =
   STOutputPlainTextQuodlibetWriter,
   STOutputPlainTextGridWriter,
   STOutputPlainTextEndOfPositionWriters,
+  STParallelWorkerForker,
   STOutputPlaintextTwinIntroWriter,
   STZeropositionSolvingStopper,
   STPiecesCounter,

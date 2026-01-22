@@ -181,6 +181,7 @@
     ENUMERATOR(STMoveInverterSetPlay), /* ditto, to solve set play */   \
     ENUMERATOR(STMinLengthGuard), /* make sure that the minimum length of a branch is respected */  \
     ENUMERATOR(STForkOnRemaining),     /* fork depending on the number of remaining moves */ \
+    ENUMERATOR(STParallelWorkerForker), /* fork for parallel worker processes */ \
     /* solver slices */                                                 \
     ENUMERATOR(STFindShortest), /* find the shortest continuation(s), */                                  \
     ENUMERATOR(STFindByIncreasingLength), /* find all solutions */      \
