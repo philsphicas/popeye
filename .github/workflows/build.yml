@@ -1,0 +1,135 @@
+name: Build Popeye
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/popeye
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-x86_64
+            toolchain: gcc
+            artifact: py-linux-x86_64
+            binary: py
+            strip: strip
+            packages: ""
+          - target: linux-arm64
+            toolchain: cross-aarch64-linux-gnu
+            artifact: py-linux-arm64
+            binary: py
+            strip: aarch64-linux-gnu-strip
+            packages: gcc-aarch64-linux-gnu
+          - target: windows-x86_64
+            toolchain: cross-x86_64-w64-mingw32
+            artifact: pywin64.exe
+            binary: pywin64.exe
+            strip: x86_64-w64-mingw32-strip
+            packages: mingw-w64
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        if: matrix.packages != ''
+        run: sudo apt-get update && sudo apt-get install -y ${{ matrix.packages }}
+      - name: Build ${{ matrix.target }}
+        run: |
+          make -f makefile.unx TOOLCHAIN=${{ matrix.toolchain }} -j$(nproc)
+          file ${{ matrix.binary }}
+          ${{ matrix.strip }} ${{ matrix.binary }}
+      - name: Rename artifact
+        if: matrix.binary != matrix.artifact
+        run: mv ${{ matrix.binary }} ${{ matrix.artifact }}
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=tag
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+  release:
+    needs: [build, docker]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Prepare release files
+        run: |
+          mkdir release
+          cp artifacts/py-linux-x86_64/py-linux-x86_64 release/
+          cp artifacts/py-linux-arm64/py-linux-arm64 release/
+          cp artifacts/pywin64.exe/pywin64.exe release/
+          chmod +x release/py-linux-*
+          ls -la release/
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Popeye ${{ github.ref_name }}
+          body: |
+            Popeye chess problem solver - ${{ github.ref_name }}
+
+            **Binaries:**
+            - `py-linux-x86_64` - Linux AMD/Intel 64-bit
+            - `py-linux-arm64` - Linux ARM64 (Graviton, Apple Silicon under Linux)
+            - `pywin64.exe` - Windows 64-bit
+
+            **Docker (multi-arch amd64 + arm64):**
+            ```
+            docker run -i ghcr.io/${{ github.repository_owner }}/popeye:${{ github.ref_name }} < problem.inp
+            ```
+
+            **Using spinach wrapper:**
+            ```
+            docker run -i ghcr.io/${{ github.repository_owner }}/popeye:${{ github.ref_name }} spinach < problems.inp
+            ```
+          files: release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

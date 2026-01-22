@@ -1,0 +1,42 @@
+# -*- Makefile -*-
+#
+
+# Include file for makefile.unx for compiling on a Unix-ish x86_64
+# platform (host) for aarch64-linux-gnu (target)
+
+# Requirements:
+#
+# The following tools can be used to produce executables for the
+# target platform and can be found in the $PATH:
+# - aarch64-linux-gnu-gcc
+# - aarch64-linux-gnu-ar
+# - aarch64-linux-gnu-ranlib
+# - aarch64-linux-gnu-strip
+
+# Include "regular" gcc settings
+include toolchains/gcc/make.incl
+
+
+# Now override where necessary
+
+# Compiler selection
+# ==================
+
+# Compiler for creating executables on target
+CCTARGET=aarch64-linux-gnu-gcc
+
+# Linker for creating executables on target
+LDTARGET=aarch64-linux-gnu-gcc
+
+# Strip utility to remove unnecessary symbols from executable
+STRIPTARGET=aarch64-linux-gnu-strip
+
+
+# Librarian
+# ---------
+
+# Archive generator
+ARCHIVER=aarch64-linux-gnu-ar rv
+
+# Archive index generator
+ARCHIVE_INDEXER=aarch64-linux-gnu-ranlib

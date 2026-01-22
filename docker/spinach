@@ -1,0 +1,2 @@
+#!/bin/sh
+exec tclsh /usr/local/bin/spinach.tcl "$@"

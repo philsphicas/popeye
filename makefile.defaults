@@ -195,4 +195,10 @@ EXECUTE=
 
 # include toolchain-specific settings and overriders
 
-TOOLCHAIN=gcc
+# Auto-detect toolchain based on OS (override with make TOOLCHAIN=xxx)
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+TOOLCHAIN ?= clang
+else
+TOOLCHAIN ?= gcc
+endif

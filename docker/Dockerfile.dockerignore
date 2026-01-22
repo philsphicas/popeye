@@ -1,0 +1,40 @@
+# Build artifacts
+*.o
+*.obj
+*.a
+*.lib.a
+py
+pylinux
+pywin64.exe
+*.exe
+
+# Git
+.git
+.gitignore
+
+# IDE/Editor
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Documentation
+*.md
+!README.md
+
+# CI/CD
+.github
+
+# Test files
+*.ref
+*.tst
+*.inp
+
+# Dependency files
+depend
+*/depend
+
+# OS files
+.DS_Store
+Thumbs.db

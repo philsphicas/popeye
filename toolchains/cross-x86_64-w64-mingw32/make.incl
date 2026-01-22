@@ -1,0 +1,94 @@
+# -*- Makefile -*-
+#
+
+# Include file for makefile.unx for compiling on a Unix-ish
+# platform (host) for x86_64-w64-mingw32 (target)
+
+# Requirements:
+#
+# The following tools can be used to produce executables for the
+# target platform and can be found in the $PATH:
+# - x86_64-w64-mingw32-gcc
+# - x86_64-w64-mingw32-ar
+# - x86_64-w64-mingw32-ranlib
+# - x86_64-w64-mingw32-strip
+
+# Include "regular" gcc settings
+include toolchains/gcc/make.incl
+
+
+# Now override where necessary
+
+# Compiler selection
+# ==================
+
+# Compiler for creating executables on target
+CCTARGET=x86_64-w64-mingw32-gcc
+
+# Linker for creating executables on target
+# Increase stack size for deep recursion in chess problem solving
+LDTARGET=x86_64-w64-mingw32-gcc -Wl,--stack,16777216
+
+# Strip utility to remove unnecessary symbols from executable
+STRIPTARGET=x86_64-w64-mingw32-strip
+
+
+# Librarian
+# ---------
+
+# Archive generator
+ARCHIVER=x86_64-w64-mingw32-ar rv
+
+# Archive index generator
+ARCHIVE_INDEXER=x86_64-w64-mingw32-ranlib
+
+
+# Compiler options
+# ----------------
+# we need minimally Win2k for guesstimating a reasonable default hash
+# table size
+#
+# The symbol _WIN32_WINNT_WIN2K is defined in the Microsoft header
+# <sdkddkver.h>
+_WIN32_WINNT_WIN2K=0x0500
+OTHER+=$(DEFINEMACRO)_WIN32_WINNT=$(_WIN32_WINNT_WIN2K)
+
+
+# Linker options
+# --------------
+
+# enumerate libraries to link
+TARGETLIBS=-lwinmm
+# winmm = Windows Multimedia Library (we use Multimedia Timers to
+# implement option maxtime)
+
+
+# Platform specific file name suffixes
+# ====================================
+
+# suffix for objects
+OBJ_SUFFIX=.obj
+
+# suffix for libraries
+LIB_SUFFIX=libwin64.a
+
+# Popeye executable file name stem
+EXE_PLATFORM_MARK=win64
+
+# suffix for executables
+EXE_SUFFIX=.exe
+
+
+# Meta information
+# ----------------
+OSTYPE=Windows
+
+
+# Selector for platform-specific files
+# ====================================
+
+PLATFORM=windows64
+
+
+# 64-bit target
+DEFS += $(DEFINEMACRO)SIXTYFOUR

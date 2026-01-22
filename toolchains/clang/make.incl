@@ -19,6 +19,13 @@ include toolchains/gcc/make.incl
 # Compiler options
 # ================
 
+# Disable LTO on macOS - it can cause linker issues
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Darwin)
+CCOPTIM := $(filter-out -flto,$(CCOPTIM))
+LDOPTIM := $(filter-out -flto,$(LDOPTIM))
+endif
+
 # abort with a descriptive message if undefined behavior is detected
 #DBG=-fsanitize=undefined -fno-sanitize-recover
 
