@@ -5,6 +5,8 @@
 #include "platform/maxtime.h"
 #include "platform/heartbeat.h"
 #include "platform/maxmem.h"
+#include "platform/worker.h"
+#include "options/options.h"
 #include "input/plaintext/memory.h"
 #include "stipulation/pipe.h"
 #include "solving/pipe.h"
@@ -93,6 +95,21 @@ static int parseCommandlineOptions(int argc, char *argv[])
     {
       protocol_overwrite();
       output_plaintext_suppress_variable();
+      idx++;
+      continue;
+    }
+    else if (strcmp(argv[idx], "-nogreeting")==0)
+    {
+      output_plaintext_suppress_greeting();
+      idx++;
+      continue;
+    }
+    else if (strcmp(argv[idx], "-worker")==0)
+    {
+      /* Worker mode: structured output for subprocess coordination */
+      set_worker_mode(true);
+      output_plaintext_suppress_greeting();
+      OptFlag[noboard] = true;  /* Suppress board diagram */
       idx++;
       continue;
     }
