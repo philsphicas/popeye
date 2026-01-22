@@ -46,8 +46,9 @@ typedef enum
   uptomovenumber,  /* 36 */
   trivialtriesavoided,  /* 37 */
   matesin1,        /* 38 */
+  matingsquare,    /* 39 */
 
-  OptCount         /* 38 */
+  OptCount         /* 40 */
 } Opt;
 
 extern boolean OptFlag[OptCount];

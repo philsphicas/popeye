@@ -70,6 +70,62 @@ unsigned int PieceId2index[MaxPieceId+1];
 
 unsigned int nr_reasons_for_staying_empty[maxsquare+4];
 
+/* MatingSquare constraint */
+boolean mating_square_constrained = false;
+boolean mating_square_allowed[nr_squares_on_board];
+
+/* Helper to find index of a square in boardnum array */
+static unsigned int square_to_index(square sq)
+{
+  square const *bnp;
+  unsigned int idx = 0;
+  for (bnp = boardnum; *bnp != initsquare; ++bnp, ++idx)
+    if (*bnp == sq)
+      return idx;
+  return 0;  /* Should never happen for valid squares */
+}
+
+void reset_mating_square_constraints(void)
+{
+  unsigned int i;
+  mating_square_constrained = false;
+  for (i = 0; i < nr_squares_on_board; i++)
+    mating_square_allowed[i] = false;
+}
+
+void mating_square_allow_edge(void)
+{
+  unsigned int idx;
+  mating_square_constrained = true;
+  for (idx = 0; idx < nr_squares_on_board; idx++)
+    if (idx < 8 || idx >= 56 || idx % 8 == 0 || idx % 8 == 7)
+      mating_square_allowed[idx] = true;
+}
+
+void mating_square_allow_corner(void)
+{
+  mating_square_constrained = true;
+  mating_square_allowed[square_to_index(square_a1)] = true;
+  mating_square_allowed[square_to_index(square_a8)] = true;
+  mating_square_allowed[square_to_index(square_h1)] = true;
+  mating_square_allowed[square_to_index(square_h8)] = true;
+}
+
+void mating_square_allow_middle(void)
+{
+  unsigned int idx;
+  mating_square_constrained = true;
+  for (idx = 0; idx < nr_squares_on_board; idx++)
+    if (idx >= 8 && idx < 56 && idx % 8 != 0 && idx % 8 != 7)
+      mating_square_allowed[idx] = true;
+}
+
+void mating_square_allow_square(square sq)
+{
+  mating_square_constrained = true;
+  mating_square_allowed[square_to_index(sq)] = true;
+}
+
 typedef struct
 {
   Flags       spec[nr_squares_on_board];
@@ -390,6 +446,11 @@ static void GenerateBlackKing(slice_index si)
                                 MaxPiece[White],MaxPiece[Black]-1);
 
   for (bnp = boardnum; *bnp!=initsquare; ++bnp)
+  {
+    /* Check MatingSquare constraint - skip squares not in allowed set */
+    if (mating_square_constrained && !mating_square_allowed[square_to_index(*bnp)])
+      continue;
+
     if (is_square_empty(*bnp) /* *bnp isn't a hole*/
         && intelligent_reserve_black_king_moves_from_to(black[index_of_king].diagram_square,
                                                         *bnp))
@@ -423,6 +484,7 @@ static void GenerateBlackKing(slice_index si)
 
       intelligent_unreserve();
     }
+  }
 
   TraceFunctionExit(__func__);
   TraceFunctionResultEnd();
