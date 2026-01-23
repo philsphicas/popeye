@@ -26,6 +26,22 @@ static int stored_argc = 0;
 static char **stored_argv = NULL;
 static boolean parallel_done = false;  /* Set when parent completes parallel solving */
 
+/* === Probe mode state === */
+static boolean probe_mode = false;
+static unsigned int probe_timeout = 60;  /* Default 60 seconds per partition order */
+
+void set_probe_mode(boolean enabled, unsigned int timeout_secs)
+{
+  probe_mode = enabled;
+  if (timeout_secs > 0)
+    probe_timeout = timeout_secs;
+}
+
+boolean is_probe_mode(void)
+{
+  return probe_mode;
+}
+
 void set_parallel_worker_count(unsigned int n)
 {
   parallel_worker_count = n;
@@ -93,6 +109,8 @@ typedef struct {
     /* Progress tracking for aggregation */
     unsigned int last_depth;
     unsigned long positions_at_depth[MAX_DEPTH_TRACKED];
+    /* Current combo being worked on */
+    char current_combo[64];
 } worker_info_t;
 
 static worker_info_t *workers = NULL;
@@ -104,6 +122,58 @@ static unsigned int global_solutions_found = 0;
 /* Progress aggregation state */
 static unsigned int last_printed_depth = 0;
 static struct timeval start_time;
+
+/* Probe mode: heavy combo tracking */
+#define MAX_HEAVY_COMBOS 256
+typedef struct {
+    char combo_info[64];      /* e.g., "23802 king=c8 checker=Pd6 checksq=d7" */
+    unsigned int seen_count;  /* How many partition orders saw this as heavy */
+    unsigned int max_depth;   /* Maximum depth reached before timeout */
+} heavy_combo_t;
+
+static heavy_combo_t heavy_combos[MAX_HEAVY_COMBOS];
+static unsigned int num_heavy_combos = 0;
+
+/* Extract combo number from combo_info string (first number) */
+static unsigned int extract_combo_number(char const *info)
+{
+    unsigned int num = 0;
+    while (*info >= '0' && *info <= '9')
+    {
+        num = num * 10 + (unsigned int)(*info - '0');
+        info++;
+    }
+    return num;
+}
+
+/* Record a heavy combo (one that didn't finish in time) */
+static void record_heavy_combo(char const *combo_info, unsigned int depth)
+{
+    unsigned int i;
+    unsigned int combo_num = extract_combo_number(combo_info);
+    
+    /* Check if we already have this combo */
+    for (i = 0; i < num_heavy_combos; i++)
+    {
+        if (extract_combo_number(heavy_combos[i].combo_info) == combo_num)
+        {
+            heavy_combos[i].seen_count++;
+            if (depth > heavy_combos[i].max_depth)
+                heavy_combos[i].max_depth = depth;
+            return;
+        }
+    }
+    
+    /* Add new heavy combo */
+    if (num_heavy_combos < MAX_HEAVY_COMBOS)
+    {
+        strncpy(heavy_combos[num_heavy_combos].combo_info, combo_info, 63);
+        heavy_combos[num_heavy_combos].combo_info[63] = '\0';
+        heavy_combos[num_heavy_combos].seen_count = 1;
+        heavy_combos[num_heavy_combos].max_depth = depth;
+        num_heavy_combos++;
+    }
+}
 
 static void kill_all_workers(void)
 {
@@ -230,6 +300,16 @@ static void process_worker_line(worker_info_t *w, char const *line)
         {
             /* Worker finished - already tracked by pipe close */
         }
+        else if (strncmp(protocol_start, "@@COMBO:", 8) == 0)
+        {
+            /* Store current combo info for status display */
+            char const *info = protocol_start + 8;
+            strncpy(w->current_combo, info, sizeof(w->current_combo) - 1);
+            w->current_combo[sizeof(w->current_combo) - 1] = '\0';
+            /* Remove trailing newline if present */
+            char *nl = strchr(w->current_combo, '\n');
+            if (nl) *nl = '\0';
+        }
         else if (strncmp(protocol_start, "@@DEBUG:", 8) == 0)
         {
             /* Debug messages - suppress in production */
@@ -318,7 +398,7 @@ boolean parallel_fork_workers(void)
         return false;
 
     num_workers = parallel_worker_count;
-    if (num_workers > 64) num_workers = 64;
+    if (num_workers > 1024) num_workers = 1024;
 
     gettimeofday(&start_time, NULL);
     last_printed_depth = ENCODE_DEPTH(1, 0);  /* Start before 1+1 */
@@ -340,7 +420,7 @@ boolean parallel_fork_workers(void)
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
 
-    fprintf(stderr, "\nUsing %u parallel workers\n", num_workers);
+    fprintf(stderr, "\nUsing %u parallel workers (partition order: %s)\n", num_workers, partition_order);
     fflush(stderr);
 
     /* Fork workers */
@@ -380,8 +460,12 @@ boolean parallel_fork_workers(void)
             forked_worker = true;
             set_worker_mode(true);
 
-            /* Set up partition for this worker */
-            set_partition(i - 1, num_workers);
+            /* Set up strided partition for this worker.
+             * With N workers and 61440 total combos, worker i handles:
+             * combos i-1, i-1+N, i-1+2N, ... (stride = N)
+             * This distributes heavy combos across all workers.
+             */
+            set_partition_range(i - 1, num_workers, 61440);
 
             /* Reset signal handlers */
             signal(SIGINT, SIG_DFL);
@@ -409,7 +493,16 @@ boolean parallel_fork_workers(void)
     }
 
     /* Parent: collect output from all workers */
-    active_workers = (int)num_workers;
+    /* Count only workers that were successfully forked */
+    active_workers = 0;
+    for (i = 0; i < num_workers; i++)
+        if (workers[i].pid > 0)
+            active_workers++;
+    
+    if (active_workers < (int)num_workers)
+        fprintf(stderr, "Warning: only %d of %u workers started (fork/pipe limit?)\n",
+                active_workers, num_workers);
+    
     last_status_time = start_time;
     while (active_workers > 0 && !interrupted)
     {
@@ -445,12 +538,23 @@ boolean parallel_fork_workers(void)
             {
                 double elapsed = (double)(now.tv_sec - start_time.tv_sec) +
                                  (double)(now.tv_usec - start_time.tv_usec) / 1000000.0;
-                fprintf(stderr, "\n[%.0fs: %d/%u workers running: ",
+                fprintf(stderr, "\n[%.0fs: %d/%u workers running",
                         elapsed, active_workers, num_workers);
-                for (i = 0; i < num_workers; i++)
-                    if (!workers[i].finished)
-                        fprintf(stderr, "%u ", workers[i].partition);
-                fprintf(stderr, "]");
+                /* Only list individual workers if few remain */
+                if (active_workers <= 16)
+                {
+                    fprintf(stderr, "]\n");
+                    for (i = 0; i < num_workers; i++)
+                        if (!workers[i].finished && workers[i].pid > 0)
+                        {
+                            if (workers[i].current_combo[0])
+                                fprintf(stderr, "  W%u: %s\n", workers[i].partition, workers[i].current_combo);
+                            else
+                                fprintf(stderr, "  W%u: (starting)\n", workers[i].partition);
+                        }
+                }
+                else
+                    fprintf(stderr, "]");
                 fflush(stderr);
                 last_status_time = now;
             }
@@ -469,8 +573,8 @@ boolean parallel_fork_workers(void)
                         close(workers[i].pipe_fd);
                         workers[i].pipe_fd = -1;
                         active_workers--;
-                        /* Report when worker finishes */
-                        if (active_workers > 0)
+                        /* Report when worker finishes - but only if few workers remain */
+                        if (active_workers > 0 && active_workers <= 16)
                         {
                             unsigned int j;
                             double elapsed = (double)(now.tv_sec - start_time.tv_sec) +
@@ -478,7 +582,7 @@ boolean parallel_fork_workers(void)
                             fprintf(stderr, "\n[%.0fs: Worker %u/%u finished. Still running (%d): ",
                                     elapsed, workers[i].partition, num_workers, active_workers);
                             for (j = 0; j < num_workers; j++)
-                                if (!workers[j].finished)
+                                if (!workers[j].finished && workers[j].pid > 0)
                                     fprintf(stderr, "%u ", workers[j].partition);
                             fprintf(stderr, "]");
                             fflush(stderr);
@@ -515,6 +619,275 @@ boolean parallel_fork_workers(void)
     return true;  /* Parent handled solving */
 }
 
+/* Run a single probe phase with the given partition order.
+ * Returns the number of workers that finished within the timeout.
+ * Records heavy combos (workers still running at timeout).
+ */
+static int run_probe_phase(char const *order, unsigned int timeout_secs)
+{
+    unsigned int i;
+    int active_workers;
+    int completed_workers = 0;
+    struct timeval phase_start, now;
+    double elapsed;
+    
+    /* Set the partition order */
+    set_partition_order(order);
+    
+    gettimeofday(&phase_start, NULL);
+    last_printed_depth = ENCODE_DEPTH(1, 0);
+    
+    workers = calloc(num_workers, sizeof(worker_info_t));
+    if (!workers)
+    {
+        fprintf(stderr, "Failed to allocate worker array\n");
+        return 0;
+    }
+    
+    for (i = 0; i < num_workers; i++)
+    {
+        workers[i].pipe_fd = -1;
+        workers[i].last_depth = 0;
+    }
+    
+    fprintf(stderr, "  Probing with partition order '%s' (timeout %us)...\n", order, timeout_secs);
+    fflush(stderr);
+    
+    /* Fork workers */
+    for (i = 1; i <= num_workers; i++)
+    {
+        int pipefd[2];
+        pid_t pid;
+        
+        if (pipe(pipefd) < 0)
+            continue;
+        
+        pid = fork();
+        if (pid < 0)
+        {
+            close(pipefd[0]);
+            close(pipefd[1]);
+            continue;
+        }
+        
+        if (pid == 0)
+        {
+            /* === CHILD PROCESS === */
+            close(pipefd[0]);
+            dup2(pipefd[1], STDOUT_FILENO);
+            dup2(pipefd[1], STDERR_FILENO);
+            close(pipefd[1]);
+            
+            setvbuf(stdout, NULL, _IOLBF, 0);
+            setvbuf(stderr, NULL, _IOLBF, 0);
+            
+            forked_worker = true;
+            set_worker_mode(true);
+            set_partition_range(i - 1, num_workers, 61440);
+            
+            signal(SIGINT, SIG_DFL);
+            signal(SIGTERM, SIG_DFL);
+            
+            free(workers);
+            workers = NULL;
+            num_workers = 0;
+            
+            return -1;  /* Signal to caller: this is child, continue solving */
+        }
+        
+        /* === PARENT PROCESS === */
+        close(pipefd[1]);
+        
+        workers[i-1].pid = pid;
+        workers[i-1].pipe_fd = pipefd[0];
+        workers[i-1].partition = i;
+        workers[i-1].buffer_pos = 0;
+        workers[i-1].finished = false;
+        
+        fcntl(pipefd[0], F_SETFL, O_NONBLOCK);
+    }
+    
+    /* Count successfully forked workers */
+    active_workers = 0;
+    for (i = 0; i < num_workers; i++)
+        if (workers[i].pid > 0)
+            active_workers++;
+    
+    /* Run until timeout or all workers done */
+    while (active_workers > 0 && !interrupted)
+    {
+        fd_set readfds;
+        int maxfd = 0;
+        int ready;
+        struct timeval timeout;
+        
+        gettimeofday(&now, NULL);
+        elapsed = (double)(now.tv_sec - phase_start.tv_sec) +
+                  (double)(now.tv_usec - phase_start.tv_usec) / 1000000.0;
+        
+        /* Check if timeout reached */
+        if (elapsed >= (double)timeout_secs)
+        {
+            /* Record heavy combos from workers still running */
+            for (i = 0; i < num_workers; i++)
+            {
+                if (!workers[i].finished && workers[i].pid > 0)
+                {
+                    if (workers[i].current_combo[0])
+                        record_heavy_combo(workers[i].current_combo, workers[i].last_depth);
+                }
+            }
+            break;
+        }
+        
+        FD_ZERO(&readfds);
+        for (i = 0; i < num_workers; i++)
+        {
+            if (!workers[i].finished && workers[i].pipe_fd >= 0)
+            {
+                FD_SET(workers[i].pipe_fd, &readfds);
+                if (workers[i].pipe_fd > maxfd)
+                    maxfd = workers[i].pipe_fd;
+            }
+        }
+        
+        timeout.tv_sec = 1;
+        timeout.tv_usec = 0;
+        
+        ready = select(maxfd + 1, &readfds, NULL, NULL, &timeout);
+        
+        if (ready > 0)
+        {
+            for (i = 0; i < num_workers; i++)
+            {
+                if (!workers[i].finished && workers[i].pipe_fd >= 0 &&
+                    FD_ISSET(workers[i].pipe_fd, &readfds))
+                {
+                    process_worker_output(&workers[i]);
+                    if (workers[i].finished)
+                    {
+                        close(workers[i].pipe_fd);
+                        workers[i].pipe_fd = -1;
+                        active_workers--;
+                        completed_workers++;
+                    }
+                }
+            }
+        }
+    }
+    
+    /* Kill remaining workers */
+    kill_all_workers();
+    
+    /* Wait for all children */
+    for (i = 0; i < num_workers; i++)
+    {
+        if (workers[i].pid > 0)
+            waitpid(workers[i].pid, NULL, 0);
+        if (workers[i].pipe_fd >= 0)
+        {
+            close(workers[i].pipe_fd);
+            workers[i].pipe_fd = -1;
+        }
+    }
+    
+    gettimeofday(&now, NULL);
+    elapsed = (double)(now.tv_sec - phase_start.tv_sec) +
+              (double)(now.tv_usec - phase_start.tv_usec) / 1000000.0;
+    
+    fprintf(stderr, "    Completed: %d workers, Still running at timeout: %d (%.1fs)\n",
+            completed_workers, (int)num_workers - completed_workers - (num_workers > 0 ? 0 : 0),
+            elapsed);
+    
+    free(workers);
+    workers = NULL;
+    
+    return completed_workers;
+}
+
+/* Print probe summary */
+static void print_probe_summary(void)
+{
+    unsigned int i;
+    
+    fprintf(stderr, "\n=== PROBE SUMMARY ===\n");
+    fprintf(stderr, "Total combos: 61440\n");
+    fprintf(stderr, "Heavy combos identified: %u\n\n", num_heavy_combos);
+    
+    if (num_heavy_combos > 0)
+    {
+        /* Sort by seen_count descending */
+        for (i = 0; i < num_heavy_combos; i++)
+        {
+            unsigned int j;
+            for (j = i + 1; j < num_heavy_combos; j++)
+            {
+                if (heavy_combos[j].seen_count > heavy_combos[i].seen_count)
+                {
+                    heavy_combo_t tmp = heavy_combos[i];
+                    heavy_combos[i] = heavy_combos[j];
+                    heavy_combos[j] = tmp;
+                }
+            }
+        }
+        
+        for (i = 0; i < num_heavy_combos; i++)
+        {
+            fprintf(stderr, "HEAVY %s (seen %u times, max depth %u+%u)\n",
+                    heavy_combos[i].combo_info,
+                    heavy_combos[i].seen_count,
+                    DECODE_M(heavy_combos[i].max_depth),
+                    DECODE_K(heavy_combos[i].max_depth));
+        }
+    }
+    else
+    {
+        fprintf(stderr, "(No heavy combos found - all work completed quickly)\n");
+    }
+    
+    fprintf(stderr, "\n");
+    fflush(stderr);
+}
+
+/* Run probe mode: cycle through partition orders and identify heavy combos */
+boolean parallel_probe(void)
+{
+    static char const *orders[] = {"kpc", "kcp", "pkc", "pck", "ckp", "cpk"};
+    unsigned int num_orders = sizeof(orders) / sizeof(orders[0]);
+    unsigned int i;
+    int result;
+    
+    if (!probe_mode || parallel_worker_count == 0)
+        return false;
+    
+    num_workers = parallel_worker_count;
+    if (num_workers > 1024) num_workers = 1024;
+    
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+    
+    fprintf(stderr, "\n=== PROBE MODE ===\n");
+    fprintf(stderr, "Workers: %u, Timeout per order: %us\n\n", num_workers, probe_timeout);
+    fflush(stderr);
+    
+    gettimeofday(&start_time, NULL);
+    
+    for (i = 0; i < num_orders && !interrupted; i++)
+    {
+        result = run_probe_phase(orders[i], probe_timeout);
+        if (result < 0)
+        {
+            /* This is a child process - continue with solving */
+            return false;
+        }
+    }
+    
+    print_probe_summary();
+    
+    parallel_done = true;
+    return true;  /* Parent handled probing */
+}
+
 #else
 /* Non-Unix stub */
 
@@ -528,6 +901,15 @@ boolean parallel_fork_workers(void)
     if (parallel_worker_count > 0)
     {
         fprintf(stderr, "Parallel solving not supported on this platform\n");
+    }
+    return false;
+}
+
+boolean parallel_probe(void)
+{
+    if (probe_mode && parallel_worker_count > 0)
+    {
+        fprintf(stderr, "Probe mode not supported on this platform\n");
     }
     return false;
 }

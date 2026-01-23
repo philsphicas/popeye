@@ -30,6 +30,14 @@ char **get_stored_argv(void);
 /* Check if parallel mode is enabled */
 boolean is_parallel_mode(void);
 
+/* === Probe mode === */
+
+/* Enable probe mode with optional timeout per partition order (default 60s) */
+void set_probe_mode(boolean enabled, unsigned int timeout_secs);
+
+/* Check if probe mode is enabled */
+boolean is_probe_mode(void);
+
 /* === Fork-based parallel solving (Unix/macOS) === */
 
 /* Attempt to fork workers for parallel solving.
@@ -44,5 +52,11 @@ boolean is_forked_worker(void);
 
 /* Check if parallel parent has completed (workers handled solving) */
 boolean parallel_solving_completed(void);
+
+/* Run probe mode: cycle through partition orders to identify heavy combos.
+ * Returns true if probing was handled (parent process).
+ * Returns false if caller should continue solving (child worker or not in probe mode).
+ */
+boolean parallel_probe(void);
 
 #endif /* PLATFORM_PARALLEL_H */

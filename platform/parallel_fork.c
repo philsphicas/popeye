@@ -30,6 +30,21 @@ void parallel_worker_forker_solve(slice_index si)
   /* Check if parallel mode is enabled */
   if (is_parallel_mode())
   {
+    /* Check if probe mode - run probe instead of normal parallel solving */
+    if (is_probe_mode())
+    {
+      if (parallel_probe())
+      {
+        /* Parent process: probing complete, we're done */
+        TraceFunctionExit(__func__);
+        TraceFunctionResultEnd();
+        return;
+      }
+      /* Child process: continue with normal solving, then exit */
+      pipe_solve_delegate(si);
+      exit(0);
+    }
+
     /* Attempt to fork workers */
     if (parallel_fork_workers())
     {

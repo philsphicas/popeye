@@ -38,6 +38,7 @@
 #include "options/maxtime.h"
 #include "output/plaintext/plaintext.h"
 #include "output/plaintext/pieces.h"
+#include "output/plaintext/language_dependant.h"
 #include "debugging/trace.h"
 #include "pieces/pieces.h"
 #include "platform/maxtime.h"
@@ -46,6 +47,8 @@
 #include "debugging/assert.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
 
 typedef unsigned int index_type;
 
@@ -76,6 +79,7 @@ unsigned int partition_total = 0;
 unsigned int partition_stride = 0;
 unsigned int partition_max = 0;
 unsigned int current_king_index = 0;
+char partition_order[4] = "kpc";  /* Default: king varies fastest */
 
 void set_partition(unsigned int index, unsigned int total)
 {
@@ -83,6 +87,29 @@ void set_partition(unsigned int index, unsigned int total)
   partition_total = total;
   partition_stride = 0;  /* Simple partition mode */
   partition_max = 0;
+}
+
+void set_partition_order(char const *order)
+{
+  /* Validate: must be a permutation of "kpc" */
+  if (order && strlen(order) == 3)
+  {
+    int has_k = 0, has_p = 0, has_c = 0;
+    int i;
+    for (i = 0; i < 3; i++)
+    {
+      if (order[i] == 'k' || order[i] == 'K') has_k = 1;
+      else if (order[i] == 'p' || order[i] == 'P') has_p = 1;
+      else if (order[i] == 'c' || order[i] == 'C') has_c = 1;
+    }
+    if (has_k && has_p && has_c)
+    {
+      partition_order[0] = (char)tolower((unsigned char)order[0]);
+      partition_order[1] = (char)tolower((unsigned char)order[1]);
+      partition_order[2] = (char)tolower((unsigned char)order[2]);
+      partition_order[3] = '\0';
+    }
+  }
 }
 
 void set_partition_range(unsigned int start, unsigned int stride, unsigned int max)
@@ -115,6 +142,100 @@ void reset_partition(void)
  */
 static unsigned int partition_call_count = 0;
 static unsigned int partition_match_count = 0;
+static unsigned int last_reported_combo = 0xFFFFFFFF;
+
+/* Square names for debug output - uses rotating buffers to allow multiple calls in one printf */
+static const char *square_name(unsigned int idx)
+{
+  static char bufs[4][4];  /* 4 rotating buffers */
+  static int buf_idx = 0;
+  char *buf = bufs[buf_idx];
+  buf_idx = (buf_idx + 1) % 4;
+  
+  if (idx >= 64) return "??";
+  buf[0] = (char)('a' + (idx % 8));
+  buf[1] = (char)('1' + (idx / 8));
+  buf[2] = '\0';
+  return buf;
+}
+
+/* Format checker piece info: "Pb2" for pawn on b2, "Nd4" for knight on d4, etc.
+ * Uses rotating buffers for safe use in printf with multiple calls.
+ * checker_idx is 0-based (corresponds to white[checker_idx+1])
+ */
+static const char *checker_piece_name(unsigned int checker_idx)
+{
+  static char bufs[4][8];
+  static int buf_idx = 0;
+  char *buf = bufs[buf_idx];
+  buf_idx = (buf_idx + 1) % 4;
+  
+  unsigned int piece_index = checker_idx + 1;  /* white[0] is king */
+  if (piece_index < MaxPiece[White])
+  {
+    piece_walk_type walk = white[piece_index].type;
+    square sq = white[piece_index].diagram_square;
+    unsigned int file = (unsigned int)((sq % onerow) - nr_of_slack_files_left_of_board);
+    unsigned int rank = (unsigned int)((sq / onerow) - nr_of_slack_rows_below_board);
+    
+    /* Get piece letter from PieceTab - use first char, uppercase */
+    char piece_char = (char)toupper((unsigned char)PieceTab[walk][0]);
+    
+    buf[0] = piece_char;
+    buf[1] = (char)('a' + file);
+    buf[2] = (char)('1' + rank);
+    buf[3] = '\0';
+  }
+  else
+  {
+    buf[0] = '?';
+    buf[1] = '\0';
+  }
+  return buf;
+}
+
+/* Compute combo index based on partition_order.
+ * The first char in order varies fastest (distributed across workers first).
+ * E.g., "kpc" means: combo = checksq*960 + checker*64 + king (king fastest)
+ *       "cpk" means: combo = king*960 + checker*64 + checksq (checksq fastest)
+ */
+static unsigned int compute_combo_index(unsigned int king_idx,
+                                        unsigned int checker_idx,
+                                        unsigned int check_sq_idx)
+{
+  unsigned int vals[3];
+  unsigned int mults[3] = {64, 15, 64};  /* k, p, c max values */
+  unsigned int i;
+  unsigned int combo = 0;
+  unsigned int mult = 1;
+  
+  /* Map order chars to values */
+  for (i = 0; i < 3; i++)
+  {
+    switch (partition_order[i])
+    {
+      case 'k': vals[i] = king_idx; break;
+      case 'p': vals[i] = checker_idx; break;
+      case 'c': vals[i] = check_sq_idx; break;
+      default:  vals[i] = 0; break;
+    }
+  }
+  
+  /* Build combo: first char varies fastest (lowest multiplier) */
+  for (i = 0; i < 3; i++)
+  {
+    combo += vals[i] * mult;
+    /* Find the multiplier for the next dimension */
+    switch (partition_order[i])
+    {
+      case 'k': mult *= 64; break;
+      case 'p': mult *= 15; break;
+      case 'c': mult *= 64; break;
+    }
+  }
+  
+  return combo;
+}
 
 boolean is_in_partition(unsigned int king_idx,
                         unsigned int checker_idx,
@@ -123,8 +244,7 @@ boolean is_in_partition(unsigned int king_idx,
   unsigned int combo_index;
   boolean result;
 
-  /* King varies fastest for good progress distribution */
-  combo_index = check_sq_idx * (64 * 15) + checker_idx * 64 + king_idx;
+  combo_index = compute_combo_index(king_idx, checker_idx, check_sq_idx);
 
   partition_call_count++;
 
@@ -132,7 +252,18 @@ boolean is_in_partition(unsigned int king_idx,
   if (partition_total > 0)
   {
     result = (combo_index % partition_total) == partition_index;
-    if (result) partition_match_count++;
+    if (result)
+    {
+      partition_match_count++;
+      /* Report when we start working on a new combo */
+      if (combo_index != last_reported_combo)
+      {
+        fprintf(stderr, "@@COMBO:%u king=%s checker=%s checksq=%s\n",
+                combo_index, square_name(king_idx), checker_piece_name(checker_idx), square_name(check_sq_idx));
+        fflush(stderr);
+        last_reported_combo = combo_index;
+      }
+    }
     return result;
   }
 
@@ -144,7 +275,20 @@ boolean is_in_partition(unsigned int king_idx,
     if (partition_num >= partition_index)
     {
       unsigned int offset = partition_num - partition_index;
-      return (offset % partition_stride) == 0;
+      result = (offset % partition_stride) == 0;
+      if (result)
+      {
+        partition_match_count++;
+        /* Report when we start working on a new combo */
+        if (combo_index != last_reported_combo)
+        {
+          fprintf(stderr, "@@COMBO:%u king=%s checker=%s checksq=%s\n",
+                  combo_index, square_name(king_idx), checker_piece_name(checker_idx), square_name(check_sq_idx));
+          fflush(stderr);
+          last_reported_combo = combo_index;
+        }
+      }
+      return result;
     }
     return false;
   }

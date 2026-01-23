@@ -101,11 +101,24 @@ extern unsigned int partition_total;
 extern unsigned int partition_stride;
 extern unsigned int partition_max;   /* Total number of partitions (e.g., 61440) */
 
+/* Partition order: determines which dimension varies fastest in combo index.
+ * Order is a 3-character string like "kpc" where:
+ *   k = king square (0-63)
+ *   p = piece/checker index (0-14)
+ *   c = check square (0-63)
+ * The first character varies fastest (gets distributed across workers first).
+ * Default is "kpc" (king varies fastest).
+ */
+extern char partition_order[4];
+
 /* Current king index for partition checking in nested loops */
 extern unsigned int current_king_index;
 
 /* Set partition N of M (0-indexed) */
 void set_partition(unsigned int index, unsigned int total);
+
+/* Set partition order (e.g., "kpc", "cpk", etc.) */
+void set_partition_order(char const *order);
 
 /* Set strided partition range (0-indexed start, stride, max) */
 void set_partition_range(unsigned int start, unsigned int stride, unsigned int max);

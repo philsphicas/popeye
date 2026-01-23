@@ -122,11 +122,41 @@ static int parseCommandlineOptions(int argc, char *argv[])
       unsigned long n;
       idx++;
       n = strtoul(argv[idx], &end, 10);
-      if (*end == '\0' && n > 0 && n <= 64)
+      if (*end == '\0' && n > 0 && n <= 1024)
       {
         set_parallel_worker_count((unsigned int)n);
       }
       idx++;
+      continue;
+    }
+    else if (idx+1<argc && strcmp(argv[idx], "-partition-order")==0)
+    {
+      /* Set partition order: kpc, cpk, pck, etc.
+       * First char varies fastest (distributed across workers first).
+       */
+      idx++;
+      set_partition_order(argv[idx]);
+      idx++;
+      continue;
+    }
+    else if (strcmp(argv[idx], "-probe")==0)
+    {
+      /* Probe mode: cycle through partition orders to discover heavy combos.
+       * Optional argument is timeout in seconds (default 60).
+       */
+      unsigned int timeout = 60;
+      idx++;
+      if (idx < argc && argv[idx][0] != '-')
+      {
+        char *end;
+        unsigned long t = strtoul(argv[idx], &end, 10);
+        if (*end == '\0' && t > 0 && t <= 3600)
+        {
+          timeout = (unsigned int)t;
+          idx++;
+        }
+      }
+      set_probe_mode(true, timeout);
       continue;
     }
     else if (strcmp(argv[idx], "-maxtrace")==0)
