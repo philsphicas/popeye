@@ -173,7 +173,8 @@ static void insert_find_shortest_help_adapter(slice_index si,
     {
       if ((!(OptFlag[startmovenumber] || OptFlag[uptomovenumber])
            || OptFlag[intelligent])
-          && length>=slack_length+2)
+          && length>=slack_length+2
+          && !OptFlag[directdepth])
       {
         {
           slice_index const prototype =
@@ -194,6 +195,15 @@ static void insert_find_shortest_help_adapter(slice_index si,
                                                   length-1-slack_length));
           pipe_link(proxy_root,ready_root);
         }
+      }
+      else if (OptFlag[directdepth] && OptFlag[intelligent] && length>=slack_length+2)
+      {
+        /* DirectDepth mode: insert STFindShortest to iterate from min_length to
+         * max_length internally, WITHOUT the outer STFindByIncreasingLength loop.
+         * This allows intelligent mode to generate targets at depth N but find
+         * shortest solutions (cook detection). */
+        slice_index const prototype = alloc_find_shortest_slice(length,min_length);
+        slice_insertion_insert(si,&prototype,1);
       }
     }
   }

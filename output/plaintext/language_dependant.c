@@ -664,7 +664,8 @@ static char const * const OptString[LanguageCount][OptCount] =
   /*35*/  "CoupsVides",
   /*36*/  "JusquAuCoup",
   /*37*/  "TrivialEssaiSupprimer",
-  /*38*/  "MatsEn1"
+  /*38*/  "MatsEn1",
+  /*39*/  "ProfondeurDirecte"
   },{
   /* Deutsch German Allemand */
   /* 0*/  "Widerlegung",
@@ -705,7 +706,8 @@ static char const * const OptString[LanguageCount][OptCount] =
   /*35*/  "NullZuege",
   /*36*/  "BisZugnummer",
   /*37*/  "TrivialeFehlversucheUnterdruecken",
-  /*38*/  "MattsIn1"
+  /*38*/  "MattsIn1",
+  /*39*/  "DirektesTiefen"
   },{
   /* English Anglais Englisch */
   /* 0*/  "Defence",
@@ -746,7 +748,8 @@ static char const * const OptString[LanguageCount][OptCount] =
   /*35*/  "NullMoves",
   /*36*/  "UpToMoveNumber",
   /*37*/  "TrivialTriesAvoid",
-  /*38*/  "MatesIn1"
+  /*38*/  "MatesIn1",
+  /*39*/  "DirectDepth"
   }
 };
 
