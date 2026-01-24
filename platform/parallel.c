@@ -573,8 +573,8 @@ boolean parallel_fork_workers(void)
                         close(workers[i].pipe_fd);
                         workers[i].pipe_fd = -1;
                         active_workers--;
-                        /* Report when worker finishes - but only if few workers remain */
-                        if (active_workers > 0 && active_workers <= 16)
+                        /* Always report worker completion with timestamp */
+                        if (active_workers >= 0)
                         {
                             unsigned int j;
                             double elapsed = (double)(now.tv_sec - start_time.tv_sec) +
