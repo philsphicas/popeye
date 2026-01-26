@@ -123,6 +123,15 @@ void set_partition_order(char const *order);
 /* Set strided partition range (0-indexed start, stride, max) */
 void set_partition_range(unsigned int start, unsigned int stride, unsigned int max);
 
+/* Set single combo mode (for rebalanced workers targeting one heavy combo) */
+void set_single_combo(unsigned int combo_index);
+
+/* Check if single combo mode is active */
+boolean is_single_combo_mode(void);
+
+/* Get the single combo index (only meaningful if is_single_combo_mode() is true) */
+unsigned int get_single_combo_index(void);
+
 /* Reset partition (disabled) */
 void reset_partition(void);
 

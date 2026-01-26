@@ -184,6 +184,7 @@
 #include "optimisations/intelligent/stalemate/finish.h"
 #include "optimisations/intelligent/stalemate/goalreachable_guard.h"
 #include "optimisations/intelligent/stalemate/immobilise_black.h"
+#include "optimisations/intelligent/first_move_partition.h"
 #include "optimisations/killer_move/collector.h"
 #include "optimisations/killer_move/final_defense_move.h"
 #include "optimisations/killer_move/prioriser.h"
@@ -1773,6 +1774,10 @@ void dispatch(slice_index si)
 
     case STIntelligentImmobilisationCounter:
       intelligent_immobilisation_counter_solve(si);
+      break;
+
+    case STFirstMovePartitionFilter:
+      first_move_partition_filter_solve(si);
       break;
 
     case STIntelligentDuplicateAvoider:

@@ -3,6 +3,7 @@
 #include "solving/move_effect_journal.h"
 #include "solving/move_generator.h"
 #include "solving/pipe.h"
+#include "solving/ply.h"
 #include "pieces/pieces.h"
 #include "solving/has_solution_type.h"
 #include "optimisations/intelligent/intelligent.h"
@@ -154,6 +155,7 @@ static boolean stalemate_isGoalReachable(void)
 void goalreachable_guard_stalemate_solve(slice_index si)
 {
   Side const just_moved = advers(SLICE_STARTER(si));
+  boolean reachable;
 
   TraceFunctionEntry(__func__);
   TraceFunctionParam("%u",si);
@@ -166,7 +168,9 @@ void goalreachable_guard_stalemate_solve(slice_index si)
   TraceValue("%u",MovesLeft[just_moved]);
   TraceEOL();
 
-  pipe_this_move_doesnt_solve_if(si,!stalemate_isGoalReachable());
+  reachable = stalemate_isGoalReachable();
+
+  pipe_this_move_doesnt_solve_if(si,!reachable);
 
   ++MovesLeft[just_moved];
   TraceValue("%u",MovesLeft[SLICE_STARTER(si)]);

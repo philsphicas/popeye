@@ -1,6 +1,7 @@
 #include "input/commandline.h"
 #include "optimisations/hash.h"
 #include "optimisations/intelligent/intelligent.h"
+#include "optimisations/intelligent/first_move_partition.h"
 #include "output/plaintext/language_dependant.h"
 #include "output/plaintext/protocol.h"
 #include "platform/maxtime.h"
@@ -159,6 +160,26 @@ static int parseCommandlineOptions(int argc, char *argv[])
       set_probe_mode(true, timeout);
       continue;
     }
+    else if (strcmp(argv[idx], "-rebalance")==0)
+    {
+      /* Rebalance mode: after timeout, kill slow workers and restart with
+       * first-move partitioning. Optional argument is timeout in seconds.
+       */
+      unsigned int timeout = 60;
+      idx++;
+      if (idx < argc && argv[idx][0] != '-')
+      {
+        char *end;
+        unsigned long t = strtoul(argv[idx], &end, 10);
+        if (*end == '\0' && t > 0 && t <= 3600)
+        {
+          timeout = (unsigned int)t;
+          idx++;
+        }
+      }
+      set_rebalance_mode(true, timeout);
+      continue;
+    }
     else if (strcmp(argv[idx], "-maxtrace")==0)
     {
 #if defined(DOTRACE)
@@ -213,6 +234,68 @@ static int parseCommandlineOptions(int argc, char *argv[])
             set_partition((unsigned int)(n - 1), (unsigned int)m);
           }
         }
+      }
+      idx++;
+      continue;
+    }
+    else if (idx+1<argc && strcmp(argv[idx], "-first-move-partition")==0)
+    {
+      /* Parse N/M format for first move partition (1-indexed, user-friendly)
+       * Example: -first-move-partition 1/4 means worker 1 of 4
+       * Worker N only explores first moves where (move_index % M) == (N-1)
+       * Internally converted to 0-indexed for set_first_move_partition()
+       */
+      char *slash;
+      idx++;
+      slash = strchr(argv[idx], '/');
+      if (slash != NULL)
+      {
+        char *end;
+        unsigned long n, m;
+        n = strtoul(argv[idx], &end, 10);
+        if (end == slash)
+        {
+          m = strtoul(slash + 1, &end, 10);
+          if (*end == '\0' && n >= 1 && n <= m && m > 0)
+          {
+            /* Convert from 1-indexed to 0-indexed */
+            set_first_move_partition((unsigned int)(n - 1), (unsigned int)m);
+          }
+        }
+      }
+      idx++;
+      continue;
+    }
+    else if (idx+1<argc && strcmp(argv[idx], "-first-move-queue")==0)
+    {
+      /* Work queue mode for first moves with N workers.
+       * Workers dynamically pull first moves from a shared queue,
+       * providing automatic load balancing.
+       * Example: -first-move-queue 4 uses 4 workers
+       */
+      char *end;
+      unsigned long n;
+      idx++;
+      n = strtoul(argv[idx], &end, 10);
+      if (*end == '\0' && n >= 1 && n <= 1024)
+      {
+        set_first_move_queue_mode((unsigned int)n);
+      }
+      idx++;
+      continue;
+    }
+    else if (idx+1<argc && strcmp(argv[idx], "-single-combo")==0)
+    {
+      /* Single combo mode: only process one specific combo index
+       * Used internally by rebalancing to target heavy combos
+       */
+      char *end;
+      unsigned long combo;
+      idx++;
+      combo = strtoul(argv[idx], &end, 10);
+      if (*end == '\0' && combo < 61440)
+      {
+        set_single_combo((unsigned int)combo);
       }
       idx++;
       continue;

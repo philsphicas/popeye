@@ -16,6 +16,7 @@
 #include "platform/parallel.h"
 #include "platform/worker.h"
 #include "optimisations/intelligent/intelligent.h"
+#include "optimisations/intelligent/first_move_partition.h"
 #include "options/maxsolutions/maxsolutions.h"
 #include "options/options.h"
 #include <stdio.h>
@@ -30,6 +31,13 @@ static boolean parallel_done = false;  /* Set when parent completes parallel sol
 static boolean probe_mode = false;
 static unsigned int probe_timeout = 60;  /* Default 60 seconds per partition order */
 
+/* === Rebalance mode state === */
+static boolean rebalance_mode = false;
+static unsigned int rebalance_timeout = 60;  /* Default 60 seconds before rebalancing */
+
+/* === First-move work queue mode state === */
+static unsigned int first_move_queue_worker_count = 0;
+
 void set_probe_mode(boolean enabled, unsigned int timeout_secs)
 {
   probe_mode = enabled;
@@ -40,6 +48,38 @@ void set_probe_mode(boolean enabled, unsigned int timeout_secs)
 boolean is_probe_mode(void)
 {
   return probe_mode;
+}
+
+void set_rebalance_mode(boolean enabled, unsigned int timeout_secs)
+{
+  rebalance_mode = enabled;
+  if (timeout_secs > 0)
+    rebalance_timeout = timeout_secs;
+}
+
+boolean is_rebalance_mode(void)
+{
+  return rebalance_mode;
+}
+
+unsigned int get_rebalance_timeout(void)
+{
+  return rebalance_timeout;
+}
+
+void set_first_move_queue_mode(unsigned int count)
+{
+  first_move_queue_worker_count = count;
+}
+
+unsigned int get_first_move_queue_count(void)
+{
+  return first_move_queue_worker_count;
+}
+
+boolean is_first_move_queue_mode(void)
+{
+  return first_move_queue_worker_count > 0;
 }
 
 void set_parallel_worker_count(unsigned int n)
@@ -111,6 +151,13 @@ typedef struct {
     unsigned long positions_at_depth[MAX_DEPTH_TRACKED];
     /* Current combo being worked on */
     char current_combo[64];
+    unsigned int current_combo_num;  /* Extracted combo number for rebalancing */
+    /* For rebalanced workers: which first-move partition */
+    unsigned int first_move_index;
+    unsigned int first_move_total;
+    /* For rebalanced workers: target single combo */
+    unsigned int target_combo;
+    boolean is_rebalanced;
 } worker_info_t;
 
 static worker_info_t *workers = NULL;
@@ -186,6 +233,83 @@ static void kill_all_workers(void)
             workers[i].finished = true;
         }
     }
+}
+
+/* Spawn a rebalanced worker for a single combo with first-move partitioning.
+ * Returns the worker index in the workers array, or -1 on failure.
+ */
+static int spawn_rebalanced_worker(unsigned int combo_num, unsigned int fm_index, unsigned int fm_total, unsigned int worker_slot)
+{
+    int pipefd[2];
+    pid_t pid;
+    
+    if (worker_slot >= num_workers)
+        return -1;
+    
+    if (pipe(pipefd) < 0)
+    {
+        perror("pipe");
+        return -1;
+    }
+    
+    pid = fork();
+    if (pid < 0)
+    {
+        perror("fork");
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return -1;
+    }
+    
+    if (pid == 0)
+    {
+        /* === CHILD PROCESS === */
+        close(pipefd[0]);
+        dup2(pipefd[1], STDOUT_FILENO);
+        dup2(pipefd[1], STDERR_FILENO);
+        close(pipefd[1]);
+        
+        setvbuf(stdout, NULL, _IOLBF, 0);
+        setvbuf(stderr, NULL, _IOLBF, 0);
+        
+        forked_worker = true;
+        set_worker_mode(true);
+        
+        /* Set single combo mode to target just this heavy combo */
+        set_single_combo(combo_num);
+        
+        /* Set first-move partition to distribute work within this combo */
+        set_first_move_partition(fm_index, fm_total);
+        
+        signal(SIGINT, SIG_DFL);
+        signal(SIGTERM, SIG_DFL);
+        
+        free(workers);
+        workers = NULL;
+        num_workers = 0;
+        
+        /* Return false so caller continues with normal solving */
+        return -1;  /* Child exit signal */
+    }
+    
+    /* === PARENT PROCESS === */
+    close(pipefd[1]);
+    
+    /* Initialize worker info */
+    memset(&workers[worker_slot], 0, sizeof(worker_info_t));
+    workers[worker_slot].pid = pid;
+    workers[worker_slot].pipe_fd = pipefd[0];
+    workers[worker_slot].partition = worker_slot + 1;
+    workers[worker_slot].buffer_pos = 0;
+    workers[worker_slot].finished = false;
+    workers[worker_slot].is_rebalanced = true;
+    workers[worker_slot].target_combo = combo_num;
+    workers[worker_slot].first_move_index = fm_index;
+    workers[worker_slot].first_move_total = fm_total;
+    
+    fcntl(pipefd[0], F_SETFL, O_NONBLOCK);
+    
+    return (int)worker_slot;
 }
 
 static void signal_handler(int sig)
@@ -309,10 +433,23 @@ static void process_worker_line(worker_info_t *w, char const *line)
             /* Remove trailing newline if present */
             char *nl = strchr(w->current_combo, '\n');
             if (nl) *nl = '\0';
+            /* Extract combo number for rebalancing */
+            w->current_combo_num = extract_combo_number(info);
+            /* Debug: print combo messages */
+            fprintf(stderr, "W%u: %s\n", w->partition, protocol_start);
+            fflush(stderr);
         }
         else if (strncmp(protocol_start, "@@DEBUG:", 8) == 0)
         {
             /* Debug messages - suppress in production */
+        }
+        else if (strncmp(protocol_start, "@@FILTER:", 9) == 0 ||
+                 strncmp(protocol_start, "@@QUEUE:", 8) == 0 ||
+                 strncmp(protocol_start, "@@FIRSTMOVES:", 13) == 0)
+        {
+            /* Debug: print these messages for troubleshooting */
+            fprintf(stderr, "W%u: %s\n", w->partition, protocol_start);
+            fflush(stderr);
         }
         /* Other @@ messages can be aggregated/handled as needed */
         return;  /* Don't print the raw line */
@@ -504,6 +641,9 @@ boolean parallel_fork_workers(void)
                 active_workers, num_workers);
     
     last_status_time = start_time;
+    {
+        boolean rebalance_triggered = false;  /* Only rebalance once */
+        
     while (active_workers > 0 && !interrupted)
     {
         fd_set readfds;
@@ -559,6 +699,139 @@ boolean parallel_fork_workers(void)
                 last_status_time = now;
             }
         }
+        
+        /* === REBALANCING LOGIC === */
+        /* Only rebalance if:
+         * 1. Rebalance mode is enabled
+         * 2. We haven't already rebalanced
+         * 3. At least one worker is still running
+         * 4. At least one worker has finished (we have free slots)
+         * 5. We've passed the rebalance timeout
+         */
+        if (rebalance_mode && !rebalance_triggered && active_workers > 0)
+        {
+            double elapsed = (double)(now.tv_sec - start_time.tv_sec) +
+                             (double)(now.tv_usec - start_time.tv_usec) / 1000000.0;
+            
+            /* Count finished workers (potential free slots) */
+            unsigned int finished_count = 0;
+            for (i = 0; i < num_workers; i++)
+            {
+                if (workers[i].finished && !workers[i].is_rebalanced)
+                    finished_count++;
+            }
+            
+            if (elapsed >= (double)rebalance_timeout && finished_count > 0)
+            {
+                /* Time to rebalance using finished worker slots */
+                unsigned int heavy_combos_to_rebalance[MAX_HEAVY_COMBOS];
+                unsigned int num_heavy = 0;
+                unsigned int free_slots[1024];
+                unsigned int num_free = 0;
+                unsigned int j;
+                
+                fprintf(stderr, "\n[%.0fs: REBALANCING - %d workers running, %u finished (using as helpers)]\n",
+                        elapsed, active_workers, finished_count);
+                
+                /* Collect heavy combos from still-running workers (don't kill them) */
+                for (i = 0; i < num_workers; i++)
+                {
+                    if (!workers[i].finished && workers[i].pid > 0 && !workers[i].is_rebalanced)
+                    {
+                        /* This worker is still running - note its current combo */
+                        if (workers[i].current_combo_num > 0 && num_heavy < MAX_HEAVY_COMBOS)
+                        {
+                            /* Check if we already have this combo */
+                            boolean already_have = false;
+                            for (j = 0; j < num_heavy; j++)
+                            {
+                                if (heavy_combos_to_rebalance[j] == workers[i].current_combo_num)
+                                {
+                                    already_have = true;
+                                    break;
+                                }
+                            }
+                            if (!already_have)
+                            {
+                                heavy_combos_to_rebalance[num_heavy++] = workers[i].current_combo_num;
+                                fprintf(stderr, "  Heavy combo: %u (%s) - worker %u still working on it\n", 
+                                        workers[i].current_combo_num, workers[i].current_combo, workers[i].partition);
+                            }
+                        }
+                    }
+                }
+                
+                /* Collect free slots from finished workers */
+                for (i = 0; i < num_workers; i++)
+                {
+                    if (workers[i].finished && !workers[i].is_rebalanced && num_free < 1024)
+                    {
+                        /* Reset the finished worker slot for reuse */
+                        workers[i].pid = 0;
+                        workers[i].finished = false;  /* Will be set again when new worker finishes */
+                        free_slots[num_free++] = i;
+                    }
+                }
+                
+                /* Spawn helper workers for heavy combos */
+                if (num_heavy > 0 && num_free > 0)
+                {
+                    /* Distribute free slots across heavy combos
+                     * Each helper uses first-move partitioning to work on different moves
+                     * The original worker continues without first-move partitioning (gets all moves)
+                     * Helpers skip moves the original might find
+                     * 
+                     * Note: This may result in duplicate work, but ensures no solutions are lost
+                     */
+                    unsigned int workers_per_combo = num_free / num_heavy;
+                    if (workers_per_combo < 2) workers_per_combo = 2;  /* At least 2 helpers per combo */
+                    
+                    unsigned int slot_idx = 0;
+                    
+                    fprintf(stderr, "  Spawning up to %u helper workers per combo (%u heavy combos, %u free slots)\n",
+                            workers_per_combo, num_heavy, num_free);
+                    
+                    for (i = 0; i < num_heavy && slot_idx < num_free; i++)
+                    {
+                        unsigned int combo = heavy_combos_to_rebalance[i];
+                        unsigned int fm_total = workers_per_combo;
+                        unsigned int fm_idx;
+                        
+                        /* Spawn helper workers for this combo with first-move partitioning */
+                        for (fm_idx = 0; fm_idx < fm_total && slot_idx < num_free; fm_idx++)
+                        {
+                            int result = spawn_rebalanced_worker(combo, fm_idx, fm_total, free_slots[slot_idx]);
+                            if (result == -1 && forked_worker)
+                            {
+                                /* We're in child process - exit the function */
+                                return false;
+                            }
+                            if (result >= 0)
+                            {
+                                active_workers++;
+                                fprintf(stderr, "    Helper for combo %u (first-move %u/%u) in slot %u\n",
+                                        combo, fm_idx + 1, fm_total, free_slots[slot_idx]);
+                            }
+                            slot_idx++;
+                        }
+                    }
+                    
+                    fprintf(stderr, "  Rebalancing complete: %d workers now active\n", active_workers);
+                }
+                else if (num_heavy == 0)
+                {
+                    fprintf(stderr, "  No heavy combos identified (workers may be between combos)\n");
+                }
+                else
+                {
+                    fprintf(stderr, "  No free slots available for helpers\n");
+                }
+                
+                rebalance_triggered = true;
+                fflush(stderr);
+            }
+        }
+        /* === END REBALANCING LOGIC === */
 
         if (ready > 0)
         {
@@ -593,6 +866,7 @@ boolean parallel_fork_workers(void)
             }
         }
     }
+    }  /* end of rebalance_triggered block */
 
     /* Wait for all children and flush any remaining output */
     for (i = 0; i < num_workers; i++)
@@ -888,6 +1162,242 @@ boolean parallel_probe(void)
     return true;  /* Parent handled probing */
 }
 
+/* First-move work queue: fork workers that pull moves from a shared queue.
+ * 
+ * IMPORTANT: This mode requires -single-combo to be specified, because the
+ * work queue distributes first moves within a SINGLE combo. Without it,
+ * all workers would try to process ALL combos and exhaust the queue on
+ * the first combo.
+ * 
+ * @param target_combo the combo index to parallelize (from -single-combo)
+ * @return true if parent handled solving, false if child should continue
+ */
+boolean parallel_first_move_queue(void)
+{
+    unsigned int i;
+    int active_workers = 0;
+    int queue_fd;
+    unsigned int initial_value = 0;
+    char queue_path[] = "/tmp/popeye_queue_XXXXXX";
+    unsigned int target_combo;
+    
+    if (first_move_queue_worker_count == 0)
+        return false;
+    
+    /* Check if single-combo mode is set - required for work queue */
+    target_combo = get_single_combo_index();
+    if (!is_single_combo_mode())
+    {
+        fprintf(stderr, "Error: -first-move-queue requires -single-combo N\n");
+        fprintf(stderr, "  The work queue distributes first moves within a single combo.\n");
+        fprintf(stderr, "  Example: ./py -first-move-queue 4 -single-combo 0 problem.inp\n");
+        return true;  /* Indicate we "handled" it (by erroring out) */
+    }
+    
+    num_workers = first_move_queue_worker_count;
+    if (num_workers > 1024) num_workers = 1024;
+    
+    /* Create queue file with initial values:
+     * - Bytes 0-3: next worker index = 0 (for round-robin assignment)
+     * - Bytes 4-7: total workers = num_workers
+     */
+    queue_fd = mkstemp(queue_path);
+    if (queue_fd < 0)
+    {
+        perror("mkstemp for work queue");
+        return false;
+    }
+    
+    /* Write initial values: next_worker=0, total_workers=num_workers */
+    if (write(queue_fd, &initial_value, sizeof(initial_value)) != sizeof(initial_value) ||
+        write(queue_fd, &num_workers, sizeof(num_workers)) != sizeof(num_workers))
+    {
+        perror("write initial queue values");
+        close(queue_fd);
+        unlink(queue_path);
+        return false;
+    }
+    
+    /* Unlink so it's deleted when all processes close it */
+    unlink(queue_path);
+    
+    gettimeofday(&start_time, NULL);
+    
+    workers = calloc(num_workers, sizeof(worker_info_t));
+    if (!workers)
+    {
+        fprintf(stderr, "Failed to allocate worker array\n");
+        close(queue_fd);
+        return false;
+    }
+    
+    for (i = 0; i < num_workers; i++)
+        workers[i].pipe_fd = -1;
+    
+    signal(SIGINT, signal_handler);
+    signal(SIGTERM, signal_handler);
+    
+    fprintf(stderr, "\nFirst-move work queue with %u workers for combo %u\n", 
+            num_workers, target_combo);
+    fflush(stderr);
+    
+    /* Fork workers */
+    for (i = 1; i <= num_workers; i++)
+    {
+        int pipefd[2];
+        pid_t pid;
+        
+        if (pipe(pipefd) < 0)
+        {
+            perror("pipe");
+            continue;
+        }
+        
+        pid = fork();
+        if (pid < 0)
+        {
+            perror("fork");
+            close(pipefd[0]);
+            close(pipefd[1]);
+            continue;
+        }
+        
+        if (pid == 0)
+        {
+            /* === CHILD PROCESS === */
+            close(pipefd[0]);
+            dup2(pipefd[1], STDOUT_FILENO);
+            dup2(pipefd[1], STDERR_FILENO);
+            close(pipefd[1]);
+            
+            setvbuf(stdout, NULL, _IOLBF, 0);
+            setvbuf(stderr, NULL, _IOLBF, 0);
+            
+            forked_worker = true;
+            set_worker_mode(true);
+            
+            /* Set single-combo mode so this worker only processes target_combo */
+            set_single_combo(target_combo);
+            
+            /* Enable work queue mode with the shared queue fd */
+            set_first_move_work_queue(queue_fd);
+            
+            signal(SIGINT, SIG_DFL);
+            signal(SIGTERM, SIG_DFL);
+            
+            free(workers);
+            workers = NULL;
+            num_workers = 0;
+            
+            /* Return false so caller continues with normal solving */
+            return false;
+        }
+        
+        /* === PARENT PROCESS === */
+        close(pipefd[1]);
+        
+        workers[i-1].pid = pid;
+        workers[i-1].pipe_fd = pipefd[0];
+        workers[i-1].partition = i;
+        workers[i-1].buffer_pos = 0;
+        workers[i-1].finished = false;
+        
+        fcntl(pipefd[0], F_SETFL, O_NONBLOCK);
+    }
+    
+    /* Parent closes its copy of the queue fd - workers have their own */
+    close(queue_fd);
+    
+    /* Count successfully forked workers */
+    for (i = 0; i < num_workers; i++)
+        if (workers[i].pid > 0)
+            active_workers++;
+    
+    if (active_workers == 0)
+    {
+        fprintf(stderr, "No workers started\n");
+        free(workers);
+        workers = NULL;
+        return false;
+    }
+    
+    fprintf(stderr, "Started %d workers\n", active_workers);
+    fflush(stderr);
+    
+    /* Parent: collect output from workers */
+    while (active_workers > 0 && !interrupted)
+    {
+        fd_set readfds;
+        int maxfd = 0;
+        int ready;
+        struct timeval timeout;
+        
+        FD_ZERO(&readfds);
+        for (i = 0; i < num_workers; i++)
+        {
+            if (!workers[i].finished && workers[i].pipe_fd >= 0)
+            {
+                FD_SET(workers[i].pipe_fd, &readfds);
+                if (workers[i].pipe_fd > maxfd)
+                    maxfd = workers[i].pipe_fd;
+            }
+        }
+        
+        timeout.tv_sec = 1;
+        timeout.tv_usec = 0;
+        
+        ready = select(maxfd + 1, &readfds, NULL, NULL, &timeout);
+        
+        if (ready > 0)
+        {
+            for (i = 0; i < num_workers; i++)
+            {
+                if (!workers[i].finished && workers[i].pipe_fd >= 0 &&
+                    FD_ISSET(workers[i].pipe_fd, &readfds))
+                {
+                    process_worker_output(&workers[i]);
+                    if (workers[i].finished)
+                    {
+                        close(workers[i].pipe_fd);
+                        workers[i].pipe_fd = -1;
+                        active_workers--;
+                        
+                        struct timeval now;
+                        gettimeofday(&now, NULL);
+                        double elapsed = (double)(now.tv_sec - start_time.tv_sec) +
+                                         (double)(now.tv_usec - start_time.tv_usec) / 1000000.0;
+                        fprintf(stderr, "\n[%.0fs: Worker %u finished. %d still running]\n",
+                                elapsed, workers[i].partition, active_workers);
+                        fflush(stderr);
+                    }
+                }
+            }
+        }
+    }
+    
+    /* Wait for all children */
+    for (i = 0; i < num_workers; i++)
+    {
+        if (workers[i].pid > 0)
+            waitpid(workers[i].pid, NULL, 0);
+        if (workers[i].pipe_fd >= 0)
+        {
+            int flags = fcntl(workers[i].pipe_fd, F_GETFL, 0);
+            fcntl(workers[i].pipe_fd, F_SETFL, flags & ~O_NONBLOCK);
+            while (!workers[i].finished)
+                process_worker_output(&workers[i]);
+            close(workers[i].pipe_fd);
+            workers[i].pipe_fd = -1;
+        }
+    }
+    
+    free(workers);
+    workers = NULL;
+    parallel_done = true;
+    
+    return true;  /* Parent handled solving */
+}
+
 #else
 /* Non-Unix stub */
 
@@ -910,6 +1420,15 @@ boolean parallel_probe(void)
     if (probe_mode && parallel_worker_count > 0)
     {
         fprintf(stderr, "Probe mode not supported on this platform\n");
+    }
+    return false;
+}
+
+boolean parallel_first_move_queue(void)
+{
+    if (first_move_queue_worker_count > 0)
+    {
+        fprintf(stderr, "First-move work queue not supported on this platform\n");
     }
     return false;
 }

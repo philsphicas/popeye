@@ -27,6 +27,21 @@ void parallel_worker_forker_solve(slice_index si)
   TraceFunctionParam("%u", si);
   TraceFunctionParamListEnd();
 
+  /* Check if first-move work queue mode is enabled */
+  if (is_first_move_queue_mode())
+  {
+    if (parallel_first_move_queue())
+    {
+      /* Parent process: workers handled solving, we're done */
+      TraceFunctionExit(__func__);
+      TraceFunctionResultEnd();
+      return;
+    }
+    /* Child process: continue with normal solving, then exit */
+    pipe_solve_delegate(si);
+    exit(0);
+  }
+
   /* Check if parallel mode is enabled */
   if (is_parallel_mode())
   {

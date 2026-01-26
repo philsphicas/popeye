@@ -326,6 +326,7 @@
     ENUMERATOR(STIntelligentDuplicateAvoider), /* avoid double solutions in intelligent mode */ \
     ENUMERATOR(STIntelligentSolutionRememberer), /* for detecting double solutions in intelligent mode */ \
     ENUMERATOR(STIntelligentImmobilisationCounter), /* determine how immobile the side to be stalemated is already */ \
+    ENUMERATOR(STFirstMovePartitionFilter), /* filter first moves by partition for parallel intelligent mode */ \
     ENUMERATOR(STKeepMatingFilter), /* deals with option KeepMatingPiece */ \
     ENUMERATOR(STMaxFlightsquares), /* deals with option MaxFlightsquares */ \
     ENUMERATOR(STFlightsquaresCounter), /* deals with option MaxFlightsquares */ \

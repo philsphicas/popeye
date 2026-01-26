@@ -28,6 +28,7 @@
 #include "optimisations/intelligent/stalemate/finish.h"
 #include "optimisations/intelligent/proof.h"
 #include "optimisations/intelligent/duplicate_avoider.h"
+#include "optimisations/intelligent/first_move_partition.h"
 #include "optimisations/intelligent/place_black_piece.h"
 #include "optimisations/intelligent/mate/finish.h"
 #include "optimisations/intelligent/mate/generate_checking_moves.h"
@@ -81,6 +82,10 @@ unsigned int partition_max = 0;
 unsigned int current_king_index = 0;
 char partition_order[4] = "kpc";  /* Default: king varies fastest */
 
+/* Single combo mode: for rebalanced workers targeting one heavy combo */
+static boolean single_combo_mode = false;
+static unsigned int single_combo_index = 0;
+
 void set_partition(unsigned int index, unsigned int total)
 {
   partition_index = index;
@@ -118,6 +123,27 @@ void set_partition_range(unsigned int start, unsigned int stride, unsigned int m
   partition_total = 0;   /* Disable simple partition mode */
   partition_stride = stride;
   partition_max = max;
+  single_combo_mode = false;
+}
+
+void set_single_combo(unsigned int combo_index)
+{
+  single_combo_mode = true;
+  single_combo_index = combo_index;
+  /* Disable other partition modes */
+  partition_total = 0;
+  partition_stride = 0;
+  partition_max = 0;
+}
+
+boolean is_single_combo_mode(void)
+{
+  return single_combo_mode;
+}
+
+unsigned int get_single_combo_index(void)
+{
+  return single_combo_index;
 }
 
 void reset_partition(void)
@@ -126,6 +152,7 @@ void reset_partition(void)
   partition_total = 0;
   partition_stride = 0;
   partition_max = 0;
+  single_combo_mode = false;
 }
 
 /* Check if a (king, checker, check_sq) combination is in current partition
@@ -247,6 +274,24 @@ boolean is_in_partition(unsigned int king_idx,
   combo_index = compute_combo_index(king_idx, checker_idx, check_sq_idx);
 
   partition_call_count++;
+
+  /* Single combo mode: only process one specific combo (for rebalanced workers) */
+  if (single_combo_mode)
+  {
+    if (combo_index == single_combo_index)
+    {
+      partition_match_count++;
+      if (combo_index != last_reported_combo)
+      {
+        fprintf(stderr, "@@COMBO:%u king=%s checker=%s checksq=%s\n",
+                combo_index, square_name(king_idx), checker_piece_name(checker_idx), square_name(check_sq_idx));
+        fflush(stderr);
+        last_reported_combo = combo_index;
+      }
+      return true;
+    }
+    return false;
+  }
 
   /* Simple partition mode: N of M */
   if (partition_total > 0)
@@ -1337,6 +1382,7 @@ boolean init_intelligent_mode(slice_index si)
         insert_intelligent_filters(si,goal_to_be_reached);
         insert_goalreachable_guards(si,goal_to_be_reached);
         check_no_king_is_possible();
+        solving_insert_first_move_partition_filter(si);
       }
       break;
 
@@ -1346,6 +1392,7 @@ boolean init_intelligent_mode(slice_index si)
       insert_intelligent_filters(si,goal_to_be_reached);
       insert_goalreachable_guards(si,goal_to_be_reached);
       check_no_king_is_possible();
+      solving_insert_first_move_partition_filter(si);
       break;
 
     default:

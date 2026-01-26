@@ -131,6 +131,7 @@ static slice_index const slice_rank_order[] =
   STCageCirceFutileCapturesRemover,
   STDoneRemovingFutileMoves,
   STDonePriorisingMoves,
+  STFirstMovePartitionFilter,
   STBulPlyRewinder,
   STTakeMakeCirceCollectRebirthSquares,
   STMove,
